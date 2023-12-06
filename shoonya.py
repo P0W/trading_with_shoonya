@@ -194,7 +194,7 @@ def place_straddle(strikes_data, qty=15, sl_factor=1.65):
         price=strikes_data["ce_ltp"],
         trigger_price=None,
         retention="DAY",
-        remarks="finifty_ce_strangle",
+        remarks="ce_strangle",
     )
     logging.info("CE Order placed: %s", json.dumps(res, indent=2))
     res = api.place_order(
@@ -208,7 +208,7 @@ def place_straddle(strikes_data, qty=15, sl_factor=1.65):
         price=strikes_data["pe_ltp"],
         trigger_price=None,
         retention="DAY",
-        remarks="finifty_pe_strangle",
+        remarks="pe_strangle",
     )
     logging.info("PE Order placed: %s", json.dumps(res, indent=2))
 
@@ -231,7 +231,7 @@ def place_straddle(strikes_data, qty=15, sl_factor=1.65):
         price=ce_sl,
         trigger_price=ce_trigger,
         retention="DAY",
-        remarks="finifty_ce_strangle_stop_loss",
+        remarks="ce_strangle_stop_loss",
     )
     logging.info("CE SL Order placed: %s", json.dumps(res, indent=2))
     res = api.place_order(
@@ -245,7 +245,7 @@ def place_straddle(strikes_data, qty=15, sl_factor=1.65):
         price=pe_sl,
         trigger_price=pe_trigger,
         retention="DAY",
-        remarks="finifty_pe_strangle_stop_loss",
+        remarks="pe_strangle_stop_loss",
     )
     logging.info("PE SL Order placed: %s", json.dumps(res, indent=2))
 
