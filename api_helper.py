@@ -1,3 +1,6 @@
+"""
+    Poorly written sample as provided by Shoonya repo - Shamlessly copied
+"""
 from NorenRestApiPy.NorenApi import NorenApi
 from threading import Timer
 import pandas as pd
