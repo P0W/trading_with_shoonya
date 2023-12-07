@@ -17,7 +17,7 @@ import redis
 import requests
 import yaml
 
-from api_helper import ShoonyaApiPy
+from api_helper import ShoonyaApiPy, Order
 
 
 def configure_logger(log_level, prefix_log_file: str = "shoonya_daily_short"):
@@ -112,7 +112,9 @@ def get_staddle_strike(symbol_index):
     if ret:
         ltp = float(ret["lp"])
         ## round to nearest INDICES_ROUNDING
-        nearest = round(ltp / INDICES_ROUNDING[symbol_index]) * INDICES_ROUNDING[symbol_index]
+        nearest = (
+            round(ltp / INDICES_ROUNDING[symbol_index]) * INDICES_ROUNDING[symbol_index]
+        )
         ce_strike = f"{symbol_index}{expiry_date}C{nearest}"
         pe_strike = f"{symbol_index}{expiry_date}P{nearest}"
         ## find the token for the strike
@@ -142,7 +144,7 @@ def login(force=False):
     """
     Login to the Shoonya API
     """
-    ACCESS_TOKEN_KEY = "access_token" ## pylint: disable=invalid-name
+    ACCESS_TOKEN_KEY = "access_token"  ## pylint: disable=invalid-name
     try:
         redis_client = redis.Redis()
         access_token = redis_client.get(ACCESS_TOKEN_KEY)
@@ -154,7 +156,7 @@ def login(force=False):
             logging.info("Access token found in cache, logging in")
         else:
             raise ValueError("No access token found")
-    except Exception as ex: ## pylint: disable=broad-except
+    except Exception as ex:  ## pylint: disable=broad-except
         logging.warning("No access token found in cache, logging in: %s", ex)
         with open("cred.yml", encoding="utf-8") as f:
             cred = yaml.load(f, Loader=yaml.FullLoader)
@@ -172,7 +174,7 @@ def login(force=False):
                 redis_client.set(
                     ACCESS_TOKEN_KEY, susertoken, ex=2 * 60 * 60
                 )  # 2 hours expiry
-            except Exception: ## pylint: disable=broad-except
+            except Exception:  ## pylint: disable=broad-except
                 pass
 
 
@@ -182,72 +184,73 @@ def place_straddle(strikes_data, qty=15, sl_factor=1.65):
     """
     if not strikes_data:
         return
-    logging.info("Strikes: %s", json.dumps(strikes_data, indent=2))
-    res = api.place_order(
-        buy_or_sell="S",
-        product_type="M",
-        exchange="NFO",
-        tradingsymbol=strikes_data["ce_strike"],
-        quantity=qty,
-        discloseqty=0,
-        price_type="LMT",
-        price=strikes_data["ce_ltp"],
-        trigger_price=None,
-        retention="DAY",
-        remarks="ce_strangle",
-    )
-    logging.info("CE Order placed: %s", json.dumps(res, indent=2))
-    res = api.place_order(
-        buy_or_sell="S",
-        product_type="M",
-        exchange="NFO",
-        tradingsymbol=strikes_data["pe_strike"],
-        quantity=qty,
-        discloseqty=0,
-        price_type="LMT",
-        price=strikes_data["pe_ltp"],
-        trigger_price=None,
-        retention="DAY",
-        remarks="pe_strangle",
-    )
-    logging.info("PE Order placed: %s", json.dumps(res, indent=2))
-
-    ## Place stop loss order for the above orders at sl_factor times the price of the order
-    logging.info("Placing stop loss orders")
     ce_sl = round_to_point5(strikes_data["ce_ltp"] * sl_factor)
-    ce_trigger = ce_sl - 0.5
-    logging.info("CE SL: %.2f, CE Trigger: %.2f", ce_sl, ce_trigger)
     pe_sl = round_to_point5(strikes_data["pe_ltp"] * sl_factor)
+    ce_trigger = ce_sl - 0.5
     pe_trigger = pe_sl - 0.5
+    logging.info("Strikes: %s", json.dumps(strikes_data, indent=2))
+    logging.info("CE SL: %.2f, CE Trigger: %.2f", ce_sl, ce_trigger)
     logging.info("PE SL: %.2f, PE Trigger: %.2f", pe_sl, pe_trigger)
-    res = api.place_order(
-        buy_or_sell="B",
-        product_type="M",
-        exchange="NFO",
-        tradingsymbol=strikes_data["ce_strike"],
-        quantity=qty,
-        discloseqty=0,
-        price_type="SL-LMT",
-        price=ce_sl,
-        trigger_price=ce_trigger,
-        retention="DAY",
-        remarks="ce_strangle_stop_loss",
-    )
-    logging.info("CE SL Order placed: %s", json.dumps(res, indent=2))
-    res = api.place_order(
-        buy_or_sell="B",
-        product_type="M",
-        exchange="NFO",
-        tradingsymbol=strikes_data["pe_strike"],
-        quantity=qty,
-        discloseqty=0,
-        price_type="SL-LMT",
-        price=pe_sl,
-        trigger_price=pe_trigger,
-        retention="DAY",
-        remarks="pe_strangle_stop_loss",
-    )
-    logging.info("PE SL Order placed: %s", json.dumps(res, indent=2))
+    all_orders = [
+        {
+            "buy_or_sell": "S",
+            "product_type": "M",
+            "exchange": "NFO",
+            "tradingsymbol": strikes_data["ce_strike"],
+            "quantity": qty,
+            "discloseqty": 0,
+            "price_type": "LMT",
+            "price": strikes_data["ce_ltp"],
+            "trigger_price": None,
+            "retention": "DAY",
+            "remarks": "ce_strangle",
+        },
+        {
+            "buy_or_sell": "S",
+            "product_type": "M",
+            "exchange": "NFO",
+            "tradingsymbol": strikes_data["pe_strike"],
+            "quantity": qty,
+            "discloseqty": 0,
+            "price_type": "LMT",
+            "price": strikes_data["pe_ltp"],
+            "trigger_price": None,
+            "retention": "DAY",
+            "remarks": "pe_strangle",
+        },
+        {
+            "buy_or_sell": "B",
+            "product_type": "M",
+            "exchange": "NFO",
+            "tradingsymbol": strikes_data["ce_strike"],
+            "quantity": qty,
+            "discloseqty": 0,
+            "price_type": "SL-LMT",
+            "price": ce_sl,
+            "trigger_price": ce_trigger,
+            "retention": "DAY",
+            "remarks": "ce_strangle_stop_loss",
+        },
+        {
+            "buy_or_sell": "B",
+            "product_type": "M",
+            "exchange": "NFO",
+            "tradingsymbol": strikes_data["pe_strike"],
+            "quantity": qty,
+            "discloseqty": 0,
+            "price_type": "SL-LMT",
+            "price": pe_sl,
+            "trigger_price": pe_trigger,
+            "retention": "DAY",
+            "remarks": "pe_strangle_stop_loss",
+            #'product_type', 'exchange', 'tradingsymbol', 'quantity', 'discloseqty', and 'price_type'
+        },
+    ]
+    ## all_orders is of type Order
+    all_orders_obj = [Order(**order) for order in all_orders]
+    logging.info("Placing straddle: %s", json.dumps(all_orders, indent=2))
+    response = api.place_basket(all_orders_obj)
+    logging.info("Response: %s", json.dumps(response, indent=2))
 
 
 class LiveFeedManager:
@@ -261,12 +264,17 @@ class LiveFeedManager:
         self.qty = qty
         self.strikes = option_strikes
         self.api = api_object
+        self.monitor_fuction = None
+        self.running = False
 
     def event_handler_feed_update(self, tick_data):
         """
         Event handler for feed update
         """
-        if not self.strikes:
+        if not self.strikes or not self.running:
+            symbols = [f"NFO|{self.strikes['ce_code']}", f"NFO|{self.strikes['pe_code']}"]
+            self.api.unsubscribe(symbols)
+            self.api.close_websocket()
             return
         msg = []
         if "lp" in tick_data:
@@ -286,6 +294,7 @@ class LiveFeedManager:
             )
             msg.append(f"Total PNL: {total_pnl}")
             logging.info("Feed Data: %s", "| ".join(msg))
+            self.running = self.monitor_fuction(total_pnl, self.strikes, self.qty)
 
     def open_callback(self):
         """
@@ -297,6 +306,13 @@ class LiveFeedManager:
         """
         Event handler for order update
         """
+        if order_data["status"] == "COMPLETE":
+            if order_data["remarks"] == "pe_strangle_stop_loss" :
+                logging.info("Stop loss hit for PE, unsubscribing")
+                self.api.unsubscribe([f"NFO|{self.strikes['pe_code']}"])
+            elif order_data["remarks"] == "ce_strangle_stop_loss":
+                logging.info("Stop loss hit for CE, unsubscribing")
+                self.api.unsubscribe([f"NFO|{self.strikes['ce_code']}"])
         logging.info("order update %s", json.dumps(order_data, indent=2))
 
     def subscribe(self, symbols_list):
@@ -305,10 +321,11 @@ class LiveFeedManager:
         """
         self.api.subscribe(symbols_list)
 
-    def start(self):
+    def start(self, callback):
         """
         Start the websocket
         """
+        self.monitor_fuction = callback
         self.api.start_websocket(
             order_update_callback=self.event_handler_order_update,
             subscribe_callback=self.event_handler_feed_update,
@@ -318,6 +335,8 @@ class LiveFeedManager:
         )
         while self.opened is False:
             logging.info("Waiting for websocket to open")
+            time.sleep(0.5)
+        self.running = True
 
 
 args = argparse.ArgumentParser()
@@ -326,7 +345,53 @@ args.add_argument("--index", required=True, choices=["NIFTY", "BANKNIFTY", "FINN
 args.add_argument("--qty", required=True, type=int)
 args.add_argument("--sl_factor", default=1.65)
 args.add_argument("--log_level", default="INFO")
+args.add_argument("--show-strikes", action="store_true", default=False)
 args = args.parse_args()
+
+
+def pnl_monitor(pnl, strikes, qty):
+    """
+    Monitor pnl
+    """
+    target_pnl = 500
+    continue_running = True
+    if pnl > target_pnl:
+        logging.info("PNL > %.2f, exiting", target_pnl)
+        orders = [
+            {
+                "buy_or_sell": "B",
+                "product_type": "M",
+                "exchange": "NFO",
+                "tradingsymbol": strikes["ce_strike"],
+                "quantity": qty,
+                "discloseqty": 0,
+                "price_type": "LMT",
+                "price": strikes["ce_ltp"],
+                "trigger_price": None,
+                "retention": "DAY",
+                "remarks": "ce_strangle",
+            },
+            {
+                "buy_or_sell": "B",
+                "product_type": "M",
+                "exchange": "NFO",
+                "tradingsymbol": strikes["pe_strike"],
+                "quantity": qty,
+                "discloseqty": 0,
+                "price_type": "LMT",
+                "price": strikes["pe_ltp"],
+                "trigger_price": None,
+                "retention": "DAY",
+                "remarks": "pe_strangle",
+            },
+        ]
+        all_orders_obj = [Order(**order) for order in orders]
+        logging.info("Placing exit positions: %s", json.dumps(orders, indent=2))
+        response = api.place_basket(all_orders_obj)
+        logging.info("Response exit positions %s", json.dumps(response, indent=2))
+        logging.info("Cancelled pending stop loss orders, manually, sorry!!")
+        continue_running = False
+    return continue_running
 
 
 if __name__ == "__main__":
@@ -336,15 +401,17 @@ if __name__ == "__main__":
     index = args.index
     strikes = get_staddle_strike(index)
     logging.info("Strikes: %s", json.dumps(strikes, indent=2))
+    if args.show_strikes:
+        sys.exit(0)
     symbols = [f"NFO|{strikes['ce_code']}", f"NFO|{strikes['pe_code']}"]
 
     live_feed_manager = LiveFeedManager(api, args.qty, strikes)
-    live_feed_manager.start()
+    live_feed_manager.start(pnl_monitor)
     logging.info("Subscribing to %s", symbols)
     live_feed_manager.subscribe(symbols)
     logging.info("Waiting for 2 seconds")
     time.sleep(2)
     logging.info("Placing straddle")
-    place_straddle(strikes)
+    place_straddle(strikes, args.qty, args.sl_factor)
     while True:
         pass

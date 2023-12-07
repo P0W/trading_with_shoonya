@@ -65,7 +65,7 @@ class ShoonyaApiPy(NorenApi):
         result = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             future_to_url = {
-                executor.submit(self.place_order, order): order for order in orders
+                executor.submit(self.placeOrder, order): order for order in orders
             }
             for future in concurrent.futures.as_completed(future_to_url):
                 url = future_to_url[future]
