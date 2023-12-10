@@ -17,7 +17,8 @@ import redis
 import requests
 import yaml
 
-from api_helper import ShoonyaApiPy, Order
+from api_helper import Order
+from api_helper import ShoonyaApiPy
 
 
 def configure_logger(log_level, prefix_log_file: str = "shoonya_daily_short"):
@@ -178,20 +179,14 @@ def login(force=False):
                 pass
 
 
-def place_straddle(strikes_data, qty=15, sl_factor=1.65):
+def place_straddle(strikes_data, qty=15):
     """
     Place a straddle order for the index
     """
     if not strikes_data:
         return
-    ce_sl = round_to_point5(strikes_data["ce_ltp"] * sl_factor)
-    pe_sl = round_to_point5(strikes_data["pe_ltp"] * sl_factor)
-    ce_trigger = ce_sl - 0.5
-    pe_trigger = pe_sl - 0.5
     logging.info("Strikes: %s", json.dumps(strikes_data, indent=2))
-    logging.info("CE SL: %.2f, CE Trigger: %.2f", ce_sl, ce_trigger)
-    logging.info("PE SL: %.2f, PE Trigger: %.2f", pe_sl, pe_trigger)
-    all_orders = [
+    straddle_orders = [
         {
             "buy_or_sell": "S",
             "product_type": "M",
@@ -203,7 +198,7 @@ def place_straddle(strikes_data, qty=15, sl_factor=1.65):
             "price": strikes_data["ce_ltp"],
             "trigger_price": None,
             "retention": "DAY",
-            "remarks": "ce_strangle",
+            "remarks": "ce_straddle",
         },
         {
             "buy_or_sell": "S",
@@ -216,64 +211,122 @@ def place_straddle(strikes_data, qty=15, sl_factor=1.65):
             "price": strikes_data["pe_ltp"],
             "trigger_price": None,
             "retention": "DAY",
-            "remarks": "pe_strangle",
-        },
-        {
-            "buy_or_sell": "B",
-            "product_type": "M",
-            "exchange": "NFO",
-            "tradingsymbol": strikes_data["ce_strike"],
-            "quantity": qty,
-            "discloseqty": 0,
-            "price_type": "SL-LMT",
-            "price": ce_sl,
-            "trigger_price": ce_trigger,
-            "retention": "DAY",
-            "remarks": "ce_strangle_stop_loss",
-        },
-        {
-            "buy_or_sell": "B",
-            "product_type": "M",
-            "exchange": "NFO",
-            "tradingsymbol": strikes_data["pe_strike"],
-            "quantity": qty,
-            "discloseqty": 0,
-            "price_type": "SL-LMT",
-            "price": pe_sl,
-            "trigger_price": pe_trigger,
-            "retention": "DAY",
-            "remarks": "pe_strangle_stop_loss",
-            #'product_type', 'exchange', 'tradingsymbol', 'quantity', 'discloseqty', and 'price_type'
+            "remarks": "pe_straddle",
         },
     ]
     ## all_orders is of type Order
-    all_orders_obj = [Order(**order) for order in all_orders]
-    logging.info("Placing straddle: %s", json.dumps(all_orders, indent=2))
-    response = api.place_basket(all_orders_obj)
+    straddle_orders_obj = [Order(**order) for order in straddle_orders]
+    logging.info("Placing straddle: %s", json.dumps(straddle_orders, indent=2))
+    response = api.place_basket(straddle_orders_obj)
     logging.info("Response: %s", json.dumps(response, indent=2))
 
 
+def place_sl_order(tsym, qty, lp, sl_factor, remarks):
+    """
+    Place a stop loss order
+    """
+    lp = float(lp)
+    sl = round_to_point5(lp * sl_factor)
+    trigger = sl - 0.5
+    ret = api.place_order(
+        buy_or_sell="B",
+        product_type="M",
+        exchange="NFO",
+        tradingsymbol=tsym,
+        quantity=qty,
+        discloseqty=0,
+        price_type="SL-LMT",
+        price=sl,
+        trigger_price=trigger,
+        retention="DAY",
+        remarks=f"{remarks}_stop_loss",
+    )
+    logging.info("Placed stop loss order: %s", json.dumps(ret, indent=2))
+
+
+def pnl_monitor(pnl):
+    """
+    Monitor pnl
+    """
+    target_pnl = 500
+    continue_running = True
+    if pnl > target_pnl:
+        logging.info("PNL > %.2f, exiting", target_pnl)
+        ret = api.get_order_book()
+        for order in ret:
+            if order["status"] != "COMPLETE":
+                continue
+            if order["remarks"] == "pe_straddle" or order["remarks"] == "ce_straddle":
+                logging.info("Unsubscribing from %s", order["tsym"])
+                api.unsubscribe(f"NFO|{order['tsym']}")
+                logging.info("Exiting Leg")
+                response = api.place_order(
+                    buy_or_sell="B",
+                    product_type="M",
+                    exchange="NFO",
+                    tradingsymbol=order["tsym"],
+                    quantity=order["qty"],
+                    discloseqty=0,
+                    price_type="MKT",
+                    price=0,  ## market order
+                    trigger_price=None,
+                    retention="DAY",
+                    remarks=f"{order['remarks']}_exit",
+                )
+                logging.info(
+                    "Response exit position %s", json.dumps(response, indent=2)
+                )
+        ret = api.get_order_book()
+        for order in ret:
+            if order["status"] != "TRIGGER_PENDING":
+                continue
+            if (
+                order["remarks"] == "pe_strangle_stop_loss"
+                or order["remarks"] == "ce_strangle_stop_loss"
+            ):
+                norenordno = order["norenordno"]
+                logging.info("Cancelling pending stop loss orders")
+                response = api.cancel_order(norenordno)
+                logging.info("Response cancel order %s", json.dumps(response, indent=2))
+        continue_running = False
+    return continue_running
+
+
+## pylint: disable=too-many-instance-attributes
 class LiveFeedManager:
     """
     Live feed manager
     """
 
-    def __init__(self, api_object, qty, option_strikes):
+    ## pylint: disable=too-many-arguments
+    def __init__(
+        self,
+        api_object,
+        qty,
+        option_strikes,
+        sl_factor,
+        placed_ord_callback,
+    ):
         self.opened = False
         self.pnl = {}
         self.qty = qty
         self.strikes = option_strikes
         self.api = api_object
-        self.monitor_fuction = None
+        self.monitor_function = None
         self.running = False
+        self.sl_factor = sl_factor
+        self.placed_ord_callback = placed_ord_callback
 
     def event_handler_feed_update(self, tick_data):
         """
         Event handler for feed update
         """
         if not self.strikes or not self.running:
-            symbols = [f"NFO|{self.strikes['ce_code']}", f"NFO|{self.strikes['pe_code']}"]
-            self.api.unsubscribe(symbols)
+            unsusbscribe_symbols = [
+                f"NFO|{self.strikes['ce_code']}",
+                f"NFO|{self.strikes['pe_code']}",
+            ]
+            self.api.unsubscribe(unsusbscribe_symbols)
             self.api.close_websocket()
             return
         msg = []
@@ -294,7 +347,7 @@ class LiveFeedManager:
             )
             msg.append(f"Total PNL: {total_pnl}")
             logging.info("Feed Data: %s", "| ".join(msg))
-            self.running = self.monitor_fuction(total_pnl, self.strikes, self.qty)
+            self.running = self.monitor_function(total_pnl)
 
     def open_callback(self):
         """
@@ -307,12 +360,22 @@ class LiveFeedManager:
         Event handler for order update
         """
         if order_data["status"] == "COMPLETE":
-            if order_data["remarks"] == "pe_strangle_stop_loss" :
+            if order_data["remarks"] == "pe_straddle_stop_loss":
                 logging.info("Stop loss hit for PE, unsubscribing")
                 self.api.unsubscribe([f"NFO|{self.strikes['pe_code']}"])
-            elif order_data["remarks"] == "ce_strangle_stop_loss":
+            elif order_data["remarks"] == "ce_straddle_stop_loss":
                 logging.info("Stop loss hit for CE, unsubscribing")
                 self.api.unsubscribe([f"NFO|{self.strikes['ce_code']}"])
+            elif (
+                order_data["remarks"] == "ce_straddle"
+                or order_data["remarks"] == "pe_straddle"
+            ):
+                logging.info("Straddle Placed %s", order_data["remarks"])
+                qty = order_data["qty"]
+                lp = order_data["lp"]
+                tsym = order_data["tsym"]
+                remarks = order_data["remarks"]
+                self.placed_ord_callback(tsym, qty, lp, self.sl_factor, remarks)
         logging.info("order update %s", json.dumps(order_data, indent=2))
 
     def subscribe(self, symbols_list):
@@ -325,7 +388,7 @@ class LiveFeedManager:
         """
         Start the websocket
         """
-        self.monitor_fuction = callback
+        self.monitor_function = callback
         self.api.start_websocket(
             order_update_callback=self.event_handler_order_update,
             subscribe_callback=self.event_handler_feed_update,
@@ -349,51 +412,6 @@ args.add_argument("--show-strikes", action="store_true", default=False)
 args = args.parse_args()
 
 
-def pnl_monitor(pnl, strikes, qty):
-    """
-    Monitor pnl
-    """
-    target_pnl = 500
-    continue_running = True
-    if pnl > target_pnl:
-        logging.info("PNL > %.2f, exiting", target_pnl)
-        orders = [
-            {
-                "buy_or_sell": "B",
-                "product_type": "M",
-                "exchange": "NFO",
-                "tradingsymbol": strikes["ce_strike"],
-                "quantity": qty,
-                "discloseqty": 0,
-                "price_type": "LMT",
-                "price": strikes["ce_ltp"],
-                "trigger_price": None,
-                "retention": "DAY",
-                "remarks": "ce_strangle",
-            },
-            {
-                "buy_or_sell": "B",
-                "product_type": "M",
-                "exchange": "NFO",
-                "tradingsymbol": strikes["pe_strike"],
-                "quantity": qty,
-                "discloseqty": 0,
-                "price_type": "LMT",
-                "price": strikes["pe_ltp"],
-                "trigger_price": None,
-                "retention": "DAY",
-                "remarks": "pe_strangle",
-            },
-        ]
-        all_orders_obj = [Order(**order) for order in orders]
-        logging.info("Placing exit positions: %s", json.dumps(orders, indent=2))
-        response = api.place_basket(all_orders_obj)
-        logging.info("Response exit positions %s", json.dumps(response, indent=2))
-        logging.info("Cancelled pending stop loss orders, manually, sorry!!")
-        continue_running = False
-    return continue_running
-
-
 if __name__ == "__main__":
     configure_logger(args.log_level)
     login(args.force)
@@ -405,13 +423,14 @@ if __name__ == "__main__":
         sys.exit(0)
     symbols = [f"NFO|{strikes['ce_code']}", f"NFO|{strikes['pe_code']}"]
 
-    live_feed_manager = LiveFeedManager(api, args.qty, strikes)
+    live_feed_manager = LiveFeedManager(
+        api, args.qty, strikes, args.sl_factor, place_sl_order
+    )
     live_feed_manager.start(pnl_monitor)
     logging.info("Subscribing to %s", symbols)
     live_feed_manager.subscribe(symbols)
     logging.info("Waiting for 2 seconds")
     time.sleep(2)
-    logging.info("Placing straddle")
-    place_straddle(strikes, args.qty, args.sl_factor)
+    place_straddle(strikes, args.qty)
     while True:
         pass

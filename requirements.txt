@@ -7,3 +7,4 @@ pyotp
 reorder-python-imports
 redis
 black
+pylint
