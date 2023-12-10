@@ -221,7 +221,7 @@ def place_straddle(strikes_data, qty=15):
     logging.info("Response: %s", json.dumps(response, indent=2))
 
 
-def place_sl_order(tsym, qty, lp, sl_factor, remarks):
+def place_sl_order(tsym, qty, lp, remarks, sl_factor):
     """
     Place a stop loss order
     """
@@ -301,20 +301,17 @@ class LiveFeedManager:
     def __init__(
         self,
         api_object,
-        qty,
         option_strikes,
-        sl_factor,
         placed_ord_callback,
     ):
         self.opened = False
         self.pnl = {}
-        self.qty = qty
         self.strikes = option_strikes
         self.api = api_object
         self.monitor_function = None
         self.running = False
-        self.sl_factor = sl_factor
         self.placed_ord_callback = placed_ord_callback
+        self.in_position = False
 
     def event_handler_feed_update(self, tick_data):
         """
@@ -327,9 +324,10 @@ class LiveFeedManager:
             ]
             self.api.unsubscribe(unsusbscribe_symbols)
             self.api.close_websocket()
+            self.in_position = False
             return
         msg = []
-        if "lp" in tick_data:
+        if "lp" in tick_data and self.in_position:
             if tick_data["tk"] == self.strikes["ce_code"]:
                 self.pnl[tick_data["tk"]] = self.strikes["ce_ltp"] - float(
                     tick_data["lp"]
@@ -341,7 +339,7 @@ class LiveFeedManager:
                 )
                 msg.append(f"PE lp: {float(tick_data['lp'])}")
         if len(self.pnl) == 2:
-            total_pnl = self.qty * (
+            total_pnl = (
                 self.pnl[self.strikes["ce_code"]] + self.pnl[self.strikes["pe_code"]]
             )
             msg.append(f"Total PNL: {total_pnl}")
@@ -374,7 +372,8 @@ class LiveFeedManager:
                 lp = order_data["lp"]
                 tsym = order_data["tsym"]
                 remarks = order_data["remarks"]
-                self.placed_ord_callback(tsym, qty, lp, self.sl_factor, remarks)
+                self.placed_ord_callback(tsym, qty, lp, remarks)
+                self.in_position = True
         logging.info("order update %s", json.dumps(order_data, indent=2))
 
     def subscribe(self, symbols_list):
@@ -417,18 +416,25 @@ if __name__ == "__main__":
     login(args.force)
     # subscribe to multiple tokens
     index = args.index
+    quantity = args.qty
     strikes = get_staddle_strike(index)
     logging.info("Strikes: %s", json.dumps(strikes, indent=2))
-    target_pnl = (strikes["ce_ltp"] + strikes["pe_ltp"]) * args.qty * (args.target)
-    logging.info("Target PNL: %.2f", target_pnl)
+    target_pnl = (strikes["ce_ltp"] + strikes["pe_ltp"]) * (args.target)
+    logging.info("Target PNL: %.2f", quantity * target_pnl)
     if args.show_strikes:
         sys.exit(0)
     symbols = [f"NFO|{strikes['ce_code']}", f"NFO|{strikes['pe_code']}"]
 
     live_feed_manager = LiveFeedManager(
-        api, args.qty, strikes, args.sl_factor, place_sl_order
+        api,
+        strikes,
+        lambda tsyb, qty, lp, remark: place_sl_order(
+            tsyb, qty, lp, remark, args.sl_factor
+        ),
     )
-    live_feed_manager.start(lambda pnl: pnl_monitor(pnl, target_pnl))
+    live_feed_manager.start(
+        lambda pnl: pnl_monitor(quantity * pnl, quantity * target_pnl)
+    )
     logging.info("Subscribing to %s", symbols)
     live_feed_manager.subscribe(symbols)
     logging.info("Waiting for 2 seconds")
