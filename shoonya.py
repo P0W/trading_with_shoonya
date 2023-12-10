@@ -244,14 +244,13 @@ def place_sl_order(tsym, qty, lp, sl_factor, remarks):
     logging.info("Placed stop loss order: %s", json.dumps(ret, indent=2))
 
 
-def pnl_monitor(pnl):
+def pnl_monitor(pnl, target):
     """
     Monitor pnl
     """
-    target_pnl = 500
     continue_running = True
-    if pnl > target_pnl:
-        logging.info("PNL > %.2f, exiting", target_pnl)
+    if pnl > target:
+        logging.info("PNL > %.2f, exiting", target)
         ret = api.get_order_book()
         for order in ret:
             if order["status"] != "COMPLETE":
@@ -406,7 +405,8 @@ args = argparse.ArgumentParser()
 args.add_argument("--force", action="store_true", default=False)
 args.add_argument("--index", required=True, choices=["NIFTY", "BANKNIFTY", "FINNIFTY"])
 args.add_argument("--qty", required=True, type=int)
-args.add_argument("--sl_factor", default=1.65)
+args.add_argument("--sl_factor", default=1.65, type=float)
+args.add_argument("--target", default=0.35, type=float)
 args.add_argument("--log_level", default="INFO")
 args.add_argument("--show-strikes", action="store_true", default=False)
 args = args.parse_args()
@@ -419,6 +419,8 @@ if __name__ == "__main__":
     index = args.index
     strikes = get_staddle_strike(index)
     logging.info("Strikes: %s", json.dumps(strikes, indent=2))
+    target_pnl = (strikes["ce_ltp"] + strikes["pe_ltp"]) * args.qty * (args.target)
+    logging.info("Target PNL: %.2f", target_pnl)
     if args.show_strikes:
         sys.exit(0)
     symbols = [f"NFO|{strikes['ce_code']}", f"NFO|{strikes['pe_code']}"]
@@ -426,7 +428,7 @@ if __name__ == "__main__":
     live_feed_manager = LiveFeedManager(
         api, args.qty, strikes, args.sl_factor, place_sl_order
     )
-    live_feed_manager.start(pnl_monitor)
+    live_feed_manager.start(lambda pnl: pnl_monitor(pnl, target_pnl))
     logging.info("Subscribing to %s", symbols)
     live_feed_manager.subscribe(symbols)
     logging.info("Waiting for 2 seconds")
