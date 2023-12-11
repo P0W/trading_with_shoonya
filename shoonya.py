@@ -1,25 +1,35 @@
 """
-    Sample code place straddle orders for NIFTY, BANKNIFTY and FINNIFTY
+    Straddle orders for 
+    NIFTY, BANKNIFTY, FINNIFTY, 
+    MIDCPNIFTY and USDINR
+    Monitoring the PNL and exiting at target or stop loss
 """
+## Author: Prashant Srivastava
+## Date: Dec 11th, 2023
+
 import argparse
 import datetime
 import json
 import logging
-import os
-import pathlib
 import sys
 import time
-import traceback
-import zipfile
 
 import pandas as pd
 import pyotp
 import redis
-import requests
 import yaml
-
-
 from NorenRestApiPy.NorenApi import NorenApi
+
+from utils import configure_logger
+from utils import download_scrip_master
+from utils import full_stack
+from utils import round_to_point5
+from utils import validate
+from utils import get_exchange
+
+from const import INDICES_ROUNDING
+from const import INDICES_TOKEN
+from const import EXCHANGE
 
 
 class ShoonyaApiPy(NorenApi):
@@ -35,88 +45,11 @@ class ShoonyaApiPy(NorenApi):
         )
 
 
-def configure_logger(log_level, prefix_log_file: str = "shoonya_daily_short"):
-    """
-    Configure the logger
-    """
-    # Setup logging
-    # create a directory logs if it does not exist
-    pathlib.Path.mkdir(pathlib.Path("logs"), exist_ok=True)
-    # Create a filename suffixed with current date DDMMYY format with
-    # current date inside logs directory
-    log_file = pathlib.Path("logs") / (
-        f"{prefix_log_file}_{datetime.datetime.now().strftime('%Y%m%d')}.log"
-    )
-    # pylint: disable=line-too-long
-    logging.basicConfig(
-        format="%(asctime)s.%(msecs)d %(filename)s:%(lineno)d:%(funcName)s() %(levelname)s %(message)s",
-        datefmt="%A,%d/%m/%Y|%H:%M:%S",
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            logging.FileHandler(log_file),
-        ],
-        level=log_level,
-    )
-
-
-INDICES_TOKEN = {
-    "NIFTY": "26000",
-    "BANKNIFTY": "26009",
-    "FINNIFTY": "26037",
-    "INDIAVIX": "26017",
-}
-
-INDICES_ROUNDING = {
-    "NIFTY": 50,
-    "BANKNIFTY": 100,
-    "FINNIFTY": 50,
-}
-
-LOT_SIZE = {
-    "NIFTY": 50,
-    "BANKNIFTY": 15,
-    "FINNIFTY": 40,
-    "SENSEX": 10,
-}
-
-
-def download_scrip_master():
-    """
-    Download the scrip master from the Shoonya endpoint website
-    """
-    today = datetime.datetime.now().strftime("%Y%m%d")
-    downloads_folder = "./downloads"
-    zip_file_name = f"{downloads_folder}/NFO_symbols.txt_{today}.zip"
-    todays_nse_fo = f"{downloads_folder}/NFO_symbols.{today}.txt"
-
-    ## unzip and read the file
-    ## create a download folder, if not exists
-    if not os.path.exists(downloads_folder):
-        os.mkdir(downloads_folder)
-    if not os.path.exists(todays_nse_fo):
-        nse_fo = requests.get("https://api.shoonya.com/NFO_symbols.txt.zip", timeout=15)
-        if nse_fo.status_code != 200:
-            logging.error("Could not download file")
-            return None
-        with open(zip_file_name, "wb") as f:
-            f.write(nse_fo.content)
-
-        ## extract the file in the download folder
-        with zipfile.ZipFile(zip_file_name, "r") as zip_ref:
-            zip_ref.extractall(downloads_folder)
-        ## remove the zip file
-        os.remove(zip_file_name)
-        ## rename the file with date suffix
-        os.rename(f"{downloads_folder}/NFO_symbols.txt", todays_nse_fo)
-    df = pd.read_csv(todays_nse_fo, sep=",")
-    return df
-
-
 def get_staddle_strike(shoonya_api, symbol_index):
     """
     Get the nearest strike for the index
     """
-    df = download_scrip_master()
+    df = download_scrip_master(file_id=f"{EXCHANGE[symbol_index]}_symbols")
     df = df[df["Symbol"] == symbol_index]
     ## the Expiry column is in format 28-DEC-2023
     ## convert to datetime an dfind the closest expiry
@@ -128,7 +61,10 @@ def get_staddle_strike(shoonya_api, symbol_index):
     expiry_date = df.iloc[0]["Expiry"]
     ## convert to 06DEC23
     expiry_date = expiry_date.strftime("%d%b%y").upper()
-    ret = shoonya_api.get_quotes(exchange="NSE", token=INDICES_TOKEN[symbol_index])
+    ret = shoonya_api.get_quotes(
+        exchange=get_exchange(symbol_index, is_index=True),
+        token=str(INDICES_TOKEN[symbol_index]),
+    )
     if ret:
         ltp = float(ret["lp"])
         ## round to nearest INDICES_ROUNDING
@@ -140,8 +76,12 @@ def get_staddle_strike(shoonya_api, symbol_index):
         ## find the token for the strike
         ce_token = df[df["TradingSymbol"] == ce_strike]["Token"].values[0]
         pe_token = df[df["TradingSymbol"] == pe_strike]["Token"].values[0]
-        ce_quotes = shoonya_api.get_quotes(exchange="NFO", token=str(ce_token))
-        pe_quotes = shoonya_api.get_quotes(exchange="NFO", token=str(pe_token))
+        ce_quotes = shoonya_api.get_quotes(
+            exchange=EXCHANGE[symbol_index], token=str(ce_token)
+        )
+        pe_quotes = shoonya_api.get_quotes(
+            exchange=EXCHANGE[symbol_index], token=str(pe_token)
+        )
         return {
             "ce_code": str(ce_token),
             "pe_code": str(pe_token),
@@ -151,13 +91,6 @@ def get_staddle_strike(shoonya_api, symbol_index):
             "pe_ltp": float(pe_quotes["lp"]),
         }
     return None
-
-
-def round_to_point5(x):
-    """
-    Round to nearest 0.5
-    """
-    return round(x * 2) / 2
 
 
 def login(shoonya_api, force=False):
@@ -208,15 +141,17 @@ def place_straddle(shoonya_api, strikes_data, qty):
     placed_orders = []
     for item in ["ce", "pe"]:
         logging.info("Placing order for %s", item)
+        symbol = strikes_data[f"{item}_code"]
+        ltp = strikes_data[f"{item}_ltp"]
         response = shoonya_api.place_order(
             buy_or_sell="S",
             product_type="M",
-            exchange="NFO",
-            tradingsymbol=strikes_data[f"{item}_strike"],
+            exchange=get_exchange(symbol),
+            tradingsymbol=symbol,
             quantity=qty,
             discloseqty=0,
             price_type="LMT",
-            price=strikes_data[f"{item}_ltp"],
+            price=ltp,
             trigger_price=None,
             retention="DAY",
             remarks=f"{item}_straddle",
@@ -240,10 +175,11 @@ def place_sl_order(shoonya_api, tsym, qty, lp, remarks, sl_factor):
     lp = float(lp)
     sl = round_to_point5(lp * sl_factor)
     trigger = sl - 0.5
+
     response = shoonya_api.place_order(
         buy_or_sell="B",
         product_type="M",
-        exchange="NFO",
+        exchange=get_exchange(tsym),
         tradingsymbol=tsym,
         quantity=qty,
         discloseqty=0,
@@ -276,13 +212,15 @@ def pnl_monitor(shoonya_api, pnl, existing_orders, target):
             ):
                 norenordno = order["norenordno"]
                 if norenordno in existing_orders:
+                    symbol = order["tsym"]
+                    exchange_code = get_exchange(symbol)
                     logging.info("Unsubscribing from %s", order["tsym"])
-                    shoonya_api.unsubscribe(f"NFO|{order['tsym']}")
+                    shoonya_api.unsubscribe(f"{exchange_code}|{order['tsym']}")
                     logging.info("Exiting Leg")
                     response = shoonya_api.place_order(
                         buy_or_sell="B",
                         product_type="M",
-                        exchange="NFO",
+                        exchange=exchange_code,
                         tradingsymbol=order["tsym"],
                         quantity=order["qty"],
                         discloseqty=0,
@@ -315,34 +253,6 @@ def pnl_monitor(shoonya_api, pnl, existing_orders, target):
     return continue_running
 
 
-def full_stack():
-    """
-    Get the full stack trace
-    """
-    exc = sys.exc_info()[0]
-    stack = traceback.extract_stack()[:-1]  # last one would be full_stack()
-    if exc is not None:  # i.e. an exception is present
-        del stack[-1]  # remove call of full_stack, the printed exception
-        # will contain the caught exception caller instead
-    trc = "Traceback (most recent call last):\n"
-    stackstr = trc + "".join(traceback.format_list(stack))
-    if exc is not None:
-        stackstr += "  " + traceback.format_exc()
-    return stackstr
-
-
-def validate(index_qty, index_value):
-    """
-    Validate the quantity
-    """
-    if index_value not in INDICES_TOKEN:
-        logging.error("Invalid index %s", index_value)
-        sys.exit(-1)
-    if index_qty % LOT_SIZE[index_value] != 0:
-        logging.error("Quantity must be multiple of %s", LOT_SIZE[index_value])
-        sys.exit(-1)
-
-
 ## pylint: disable=too-many-instance-attributes
 class LiveFeedManager:
     """
@@ -367,6 +277,7 @@ class LiveFeedManager:
         self.existing_orders = []
         self.premium_collected = 0.0
         self.premium_left = 0.0
+        self.exchange = get_exchange(self.strikes["ce_code"])
 
     def event_handler_feed_update(self, tick_data):
         """
@@ -375,8 +286,8 @@ class LiveFeedManager:
         try:
             if not self.strikes or not self.running:
                 unsusbscribe_symbols = [
-                    f"NFO|{self.strikes['ce_code']}",
-                    f"NFO|{self.strikes['pe_code']}",
+                    f"{self.exchange}|{self.strikes['ce_code']}",
+                    f"{self.exchange}|{self.strikes['pe_code']}",
                 ]
                 self.api.unsubscribe(unsusbscribe_symbols)
                 self.in_position = False
@@ -419,11 +330,11 @@ class LiveFeedManager:
         if order_data["status"] == "COMPLETE":
             if order_data["remarks"] == "pe_straddle_stop_loss":
                 logging.info("Stop loss hit for PE, unsubscribing")
-                self.api.unsubscribe([f"NFO|{self.strikes['pe_code']}"])
+                self.api.unsubscribe([f"{self.exchange}|{self.strikes['pe_code']}"])
                 self.premium_left += order_data["flqty"] * order_data["flprc"]
             elif order_data["remarks"] == "ce_straddle_stop_loss":
                 logging.info("Stop loss hit for CE, unsubscribing")
-                self.api.unsubscribe([f"NFO|{self.strikes['ce_code']}"])
+                self.api.unsubscribe([f"{self.exchange}|{self.strikes['ce_code']}"])
                 self.premium_left += order_data["flqty"] * order_data["flprc"]
             elif (
                 order_data["remarks"] == "ce_straddle"
@@ -500,14 +411,40 @@ class LiveFeedManager:
         self.api.close_websocket()
 
 
-args = argparse.ArgumentParser()
-args.add_argument("--force", action="store_true", default=False)
-args.add_argument("--index", required=True, choices=["NIFTY", "BANKNIFTY", "FINNIFTY"])
-args.add_argument("--qty", required=True, type=int)
-args.add_argument("--sl_factor", default=1.65, type=float)
-args.add_argument("--target", default=0.35, type=float)
-args.add_argument("--log_level", default="INFO")
-args.add_argument("--show-strikes", action="store_true", default=False)
+args = argparse.ArgumentParser(
+    description="Straddle orders for NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY and USDINR"
+)
+args.add_argument("--force", action="store_true", default=False, help="Force login")
+args.add_argument(
+    "--index",
+    required=True,
+    choices=[
+        "NIFTY",
+        "BANKNIFTY",
+        "FINNIFTY",
+        "MIDCPNIFTY",
+        "USDINR",
+        "EURINR",
+        "GBPINR",
+        "JPYINR",
+    ],
+)
+args.add_argument("--qty", required=True, type=int, help="Quantity to trade")
+args.add_argument(
+    "--sl_factor", default=1.65, type=float, help="Stop loss factor | default 65%% on individual leg"
+)
+args.add_argument(
+    "--target", default=0.35, type=float, help="Target profit | default 35%% of collected premium"
+)
+args.add_argument(
+    "--log_level", default="INFO", help="Log level", choices=["INFO", "DEBUG"]
+)
+args.add_argument(
+    "--show-strikes",
+    action="store_true",
+    default=False,
+    help="Show strikes only and exit",
+)
 args = args.parse_args()
 
 
@@ -516,6 +453,7 @@ if __name__ == "__main__":
     # subscribe to multiple tokens
     index = args.index
     quantity = args.qty
+    exchange = EXCHANGE[index]
     ## validate the quantity
     validate(quantity, index)
     api = ShoonyaApiPy()
@@ -535,7 +473,7 @@ if __name__ == "__main__":
     )
     if args.show_strikes:
         sys.exit(0)
-    symbols = [f"NFO|{strikes['ce_code']}", f"NFO|{strikes['pe_code']}"]
+    symbols = [f"{exchange}|{strikes['ce_code']}", f"{exchange}|{strikes['pe_code']}"]
 
     live_feed_manager = LiveFeedManager(
         api,
