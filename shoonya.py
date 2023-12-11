@@ -475,7 +475,7 @@ class LiveFeedManager:
         """
         Stop the websocket
         """
-        self.api.stop_websocket()
+        self.api.close_websocket()
 
 
 args = argparse.ArgumentParser()
