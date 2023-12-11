@@ -545,8 +545,8 @@ if __name__ == "__main__":
         ),
     )
     live_feed_manager.start(
-        lambda pnl, stop_loss_orders: pnl_monitor(
-            api, quantity * pnl, stop_loss_orders, quantity * target_pnl
+        lambda pnl, all_orders: pnl_monitor(
+            api, quantity * pnl, all_orders, quantity * target_pnl
         )
     )
     logging.info("Subscribing to %s", symbols)
