@@ -1,8 +1,8 @@
-# Shoonya Trading Project
+# Trading with shoonya
 
 ## Description
 
-This project is a trading bot built with Python. It uses the `shoonya.py` script to perform various trading operations.
+This project is a trading bot built with Python. It uses the `shoonya.py` script to place a short straddle and then monitors the live MTM
 
 ## Installation
 
