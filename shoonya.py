@@ -231,6 +231,7 @@ def place_straddle(shoonya_api, strikes_data, qty):
             sys.exit(-1)
     return placed_orders
 
+
 ## pylint: disable=too-many-arguments
 def place_sl_order(shoonya_api, tsym, qty, lp, remarks, sl_factor):
     """
@@ -364,6 +365,8 @@ class LiveFeedManager:
         self.placed_ord_callback = placed_ord_callback
         self.in_position = False
         self.existing_orders = []
+        self.premium_collected = 0.0
+        self.premium_left = 0.0
 
     def event_handler_feed_update(self, tick_data):
         """
@@ -417,22 +420,32 @@ class LiveFeedManager:
             if order_data["remarks"] == "pe_straddle_stop_loss":
                 logging.info("Stop loss hit for PE, unsubscribing")
                 self.api.unsubscribe([f"NFO|{self.strikes['pe_code']}"])
+                self.premium_left += order_data["flqty"] * order_data["flprc"]
             elif order_data["remarks"] == "ce_straddle_stop_loss":
                 logging.info("Stop loss hit for CE, unsubscribing")
                 self.api.unsubscribe([f"NFO|{self.strikes['ce_code']}"])
+                self.premium_left += order_data["flqty"] * order_data["flprc"]
             elif (
                 order_data["remarks"] == "ce_straddle"
                 or order_data["remarks"] == "pe_straddle"
             ):
                 logging.info("Straddle Placed %s", order_data["remarks"])
-                qty = order_data["qty"]
-                lp = order_data["prc"]
+                qty = order_data["flqty"]
+                lp = order_data["flprc"]
                 tsym = order_data["tsym"]
                 remarks = order_data["remarks"]
+                slipage = lp - order_data["prc"]
+                logging.info("Slipage %.2f | %s", slipage, remarks)
+                self.premium_collected += qty * lp
                 orderno = self.placed_ord_callback(tsym, qty, lp, remarks)
                 if orderno:
                     self.existing_orders.append(orderno)
                 self.in_position = True
+            elif (
+                order_data["remarks"] == "ce_straddle_exit"
+                or order_data["remarks"] == "pe_straddle_exit"
+            ):
+                self.premium_left += order_data["flqty"] * order_data["flprc"]
         logging.info("order update %s", json.dumps(order_data, indent=2))
 
     def subscribe(self, symbols_list):
@@ -475,6 +488,15 @@ class LiveFeedManager:
         """
         Stop the websocket
         """
+        profit = self.premium_collected - self.premium_left
+        profit_percent = (profit / self.premium_collected) * 100
+        logging.info(
+            "Premium Collected %.2f | Premium Left %.2f | Profit %.2f | Profit %% %.2f",
+            self.premium_collected,
+            self.premium_left,
+            profit,
+            profit_percent,
+        )
         self.api.close_websocket()
 
 
