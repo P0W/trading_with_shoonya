@@ -280,6 +280,7 @@ class LiveFeedManager:
         self.premium_collected = 0.0
         self.premium_left = 0.0
         self.exchange = get_exchange(self.strikes["ce_strike"])
+        self.subscribed_symbols = set()
 
     def event_handler_feed_update(self, tick_data):
         """
@@ -291,7 +292,7 @@ class LiveFeedManager:
                     f"{self.exchange}|{self.strikes['ce_code']}",
                     f"{self.exchange}|{self.strikes['pe_code']}",
                 ]
-                self.api.unsubscribe(unsusbscribe_symbols)
+                self.unsubscribe(unsusbscribe_symbols)
                 self.in_position = False
                 return
             msg = []
@@ -334,12 +335,18 @@ class LiveFeedManager:
             flqty = int(order_data["flqty"])
             if order_data["remarks"] == "pe_straddle_stop_loss":
                 logging.info("Stop loss hit for PE, unsubscribing")
-                self.api.unsubscribe([f"{self.exchange}|{self.strikes['pe_code']}"])
+                self.unsubscribe([f"{self.exchange}|{self.strikes['pe_code']}"])
                 self.premium_left += flprc * flqty
             elif order_data["remarks"] == "ce_straddle_stop_loss":
                 logging.info("Stop loss hit for CE, unsubscribing")
-                self.api.unsubscribe([f"{self.exchange}|{self.strikes['ce_code']}"])
+                self.unsubscribe([f"{self.exchange}|{self.strikes['ce_code']}"])
                 self.premium_left += flprc * flqty
+            elif self.is_empty():
+                logging.info("All positions closed, exiting")
+                self.running = False
+            elif self.day_over():
+                logging.info("Day over, exiting")
+                self.running = False
             elif (
                 order_data["remarks"] == "ce_straddle"
                 or order_data["remarks"] == "pe_straddle"
@@ -360,14 +367,44 @@ class LiveFeedManager:
                 order_data["remarks"] == "ce_straddle_exit"
                 or order_data["remarks"] == "pe_straddle_exit"
             ):
-                self.premium_left += order_data["flqty"] * order_data["flprc"]
+                self.premium_left += flqty * flprc
         logging.info("order update %s", json.dumps(order_data, indent=2))
 
     def subscribe(self, symbols_list):
         """
         Subscribe to symbols
         """
+        logging.info("Subscribing to %s", symbols_list)
         self.api.subscribe(symbols_list)
+        ## add to the list of subscribed symbols
+        self.subscribed_symbols.update(symbols_list)
+
+    def unsubscribe(self, symbols_list):
+        """
+        Unsubscribe from symbols
+        """
+        for symbol in symbols_list:
+            self.api.unsubscribe(symbol)
+            ## remove from the list of subscribed symbols
+            if symbol in self.subscribed_symbols:
+                logging.info("Unsubscribed from %s", symbol)
+                self.subscribed_symbols.remove(symbol)
+
+    def is_empty(self):
+        """
+        Is empty
+        """
+        return len(self.subscribed_symbols) == 0
+    
+    def day_over(self):
+        """
+        Day over
+        """
+        ## check for 15:31, beware of timezone
+        now = datetime.datetime.now()
+        if now.hour == 15 and now.minute >= 31:
+            return True
+        return False
 
     def start(self, callback):
         """
@@ -507,7 +544,7 @@ if __name__ == "__main__":
         live_feed_manager.update_orders(orders)
     while live_feed_manager.is_running():
         pass
-    live_feed_manager.stop()
     logging.info("Exiting")
     time.sleep(2)
+    live_feed_manager.stop()
     logging.info("Good Bye!")
