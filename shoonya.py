@@ -20,6 +20,8 @@ import redis
 import yaml
 from NorenRestApiPy.NorenApi import NorenApi
 
+# from api_helper import ShoonyaApiPy
+
 from utils import configure_logger
 from utils import download_scrip_master
 from utils import full_stack
@@ -141,7 +143,7 @@ def place_straddle(shoonya_api, strikes_data, qty):
     placed_orders = []
     for item in ["ce", "pe"]:
         logging.info("Placing order for %s", item)
-        symbol = strikes_data[f"{item}_code"]
+        symbol = strikes_data[f"{item}_strike"]
         ltp = strikes_data[f"{item}_ltp"]
         response = shoonya_api.place_order(
             buy_or_sell="S",
@@ -156,7 +158,7 @@ def place_straddle(shoonya_api, strikes_data, qty):
             retention="DAY",
             remarks=f"{item}_straddle",
         )
-        if response["stat"] == "Ok":
+        if response and response["stat"] == "Ok":
             logging.info("Order placed for %s", item)
             logging.info("Response: %s", json.dumps(response, indent=2))
             placed_orders.append(response["norenordno"])
@@ -190,7 +192,7 @@ def place_sl_order(shoonya_api, tsym, qty, lp, remarks, sl_factor):
         remarks=f"{remarks}_stop_loss",
     )
     logging.info("Placed stop loss order: %s", json.dumps(response, indent=2))
-    if response["stat"] == "Ok":
+    if response and response["stat"] == "Ok":
         return response["norenordno"]
     return None
 
@@ -277,7 +279,7 @@ class LiveFeedManager:
         self.existing_orders = []
         self.premium_collected = 0.0
         self.premium_left = 0.0
-        self.exchange = get_exchange(self.strikes["ce_code"])
+        self.exchange = get_exchange(self.strikes["ce_strike"])
 
     def event_handler_feed_update(self, tick_data):
         """
@@ -327,25 +329,27 @@ class LiveFeedManager:
         """
         Event handler for order update
         """
-        if order_data["status"] == "COMPLETE":
+        if order_data["status"] == "COMPLETE" and order_data["reporttype"] == "Fill":
+            flprc = float(order_data["flprc"])
+            flqty = int(order_data["flqty"])
             if order_data["remarks"] == "pe_straddle_stop_loss":
                 logging.info("Stop loss hit for PE, unsubscribing")
                 self.api.unsubscribe([f"{self.exchange}|{self.strikes['pe_code']}"])
-                self.premium_left += order_data["flqty"] * order_data["flprc"]
+                self.premium_left += flprc * flqty
             elif order_data["remarks"] == "ce_straddle_stop_loss":
                 logging.info("Stop loss hit for CE, unsubscribing")
                 self.api.unsubscribe([f"{self.exchange}|{self.strikes['ce_code']}"])
-                self.premium_left += order_data["flqty"] * order_data["flprc"]
+                self.premium_left += flprc * flqty
             elif (
                 order_data["remarks"] == "ce_straddle"
                 or order_data["remarks"] == "pe_straddle"
             ):
                 logging.info("Straddle Placed %s", order_data["remarks"])
-                qty = order_data["flqty"]
-                lp = order_data["flprc"]
+                qty = flqty
+                lp = flprc
                 tsym = order_data["tsym"]
                 remarks = order_data["remarks"]
-                slipage = lp - order_data["prc"]
+                slipage = lp - float(order_data["prc"])
                 logging.info("Slipage %.2f | %s", slipage, remarks)
                 self.premium_collected += qty * lp
                 orderno = self.placed_ord_callback(tsym, qty, lp, remarks)
@@ -431,13 +435,19 @@ args.add_argument(
 )
 args.add_argument("--qty", required=True, type=int, help="Quantity to trade")
 args.add_argument(
-    "--sl_factor", default=1.65, type=float, help="Stop loss factor | default 65%% on individual leg"
+    "--sl_factor",
+    default=1.65,
+    type=float,
+    help="Stop loss factor | default 65%% on individual leg",
 )
 args.add_argument(
-    "--target", default=0.35, type=float, help="Target profit | default 35%% of collected premium"
+    "--target",
+    default=0.35,
+    type=float,
+    help="Target profit | default 35%% of collected premium",
 )
 args.add_argument(
-    "--log_level", default="INFO", help="Log level", choices=["INFO", "DEBUG"]
+    "--log_level", default="DEBUG", help="Log level", choices=["INFO", "DEBUG"]
 )
 args.add_argument(
     "--show-strikes",
@@ -451,6 +461,7 @@ args = args.parse_args()
 if __name__ == "__main__":
     configure_logger(args.log_level)
     # subscribe to multiple tokens
+    logging = logging.getLogger(__name__)
     index = args.index
     quantity = args.qty
     exchange = EXCHANGE[index]
@@ -492,7 +503,8 @@ if __name__ == "__main__":
     logging.info("Waiting for 2 seconds")
     time.sleep(2)
     orders = place_straddle(api, strikes, args.qty)
-    live_feed_manager.update_orders(orders)
+    if orders:
+        live_feed_manager.update_orders(orders)
     while live_feed_manager.is_running():
         pass
     live_feed_manager.stop()
