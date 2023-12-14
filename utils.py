@@ -53,6 +53,7 @@ def validate(index_qty, index_value):
         sys.exit(-1)
 
 
+## pylint: disable=line-too-long
 def configure_logger(log_level, prefix_log_file: str = "shoonya_daily_short"):
     """
     Configure the logger
@@ -79,7 +80,7 @@ def configure_logger(log_level, prefix_log_file: str = "shoonya_daily_short"):
     color_stream_handler = colorlog.StreamHandler()
     color_stream_handler.setFormatter(
         colorlog.ColoredFormatter(
-            fmt="%(log_color)s%(asctime)s.%(msecs)d %(filename)s:%(lineno)d:%(funcName)s() %(levelname)s %(message)s",
+            fmt="%(log_color)s%(levelname)s:%(name)s:%(asctime)s.%(msecs)d %(filename)s:%(lineno)d:%(funcName)s() %(message)s",
             datefmt="%A,%d/%m/%Y|%H:%M:%S",
             log_colors=log_colors_config,
         )
@@ -87,6 +88,8 @@ def configure_logger(log_level, prefix_log_file: str = "shoonya_daily_short"):
 
     # Configure the logger
     logging.basicConfig(
+        format="%(levelname)s:%(name)s:%(asctime)s.%(msecs)d %(filename)s:%(lineno)d:%(funcName)s() %(message)s",
+        datefmt="%A,%d/%m/%Y|%H:%M:%S",
         handlers=[
             color_stream_handler,
             logging.FileHandler(log_file),

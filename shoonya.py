@@ -47,6 +47,7 @@ class ShoonyaApiPy(NorenApi):
         )
 
 
+## pylint: disable=too-many-locals
 def get_staddle_strike(shoonya_api, symbol_index):
     """
     Get the nearest strike for the index
@@ -84,14 +85,15 @@ def get_staddle_strike(shoonya_api, symbol_index):
         pe_quotes = shoonya_api.get_quotes(
             exchange=EXCHANGE[symbol_index], token=str(pe_token)
         )
-        premium_collected = float(ce_quotes["lp"]) + float(pe_quotes["lp"])
-        ## get sl strike as straddle minus premium collected roundede to nearest INDICES_ROUNDING[symbol_index]
+        premium = float(ce_quotes["lp"]) + float(pe_quotes["lp"])
+        ## get sl strike as straddle minus premium collected roundede to
+        ## nearest INDICES_ROUNDING[symbol_index]
         ce_sl = (
-            round((nearest + premium_collected) / INDICES_ROUNDING[symbol_index])
+            round((nearest + premium) / INDICES_ROUNDING[symbol_index])
             * INDICES_ROUNDING[symbol_index]
         )
         pe_sl = (
-            round((nearest - premium_collected) / INDICES_ROUNDING[symbol_index])
+            round((nearest - premium) / INDICES_ROUNDING[symbol_index])
             * INDICES_ROUNDING[symbol_index]
         )
         ce_sl_strike = f"{symbol_index}{expiry_date}C{ce_sl}"
@@ -520,7 +522,7 @@ args.add_argument(
     help="Target profit | default 35%% of collected premium",
 )
 args.add_argument(
-    "--log_level", default="DEBUG", help="Log level", choices=["INFO", "DEBUG"]
+    "--log-level", default="DEBUG", help="Log level", choices=["INFO", "DEBUG"]
 )
 args.add_argument(
     "--show-strikes",
