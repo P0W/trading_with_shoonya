@@ -8,3 +8,4 @@ reorder-python-imports
 redis
 black
 pylint
+colorlog

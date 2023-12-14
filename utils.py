@@ -11,6 +11,7 @@ import zipfile
 
 import pandas as pd
 import requests
+import colorlog
 
 from const import INDICES_TOKEN
 from const import LOT_SIZE
@@ -64,16 +65,36 @@ def configure_logger(log_level, prefix_log_file: str = "shoonya_daily_short"):
     log_file = pathlib.Path("logs") / (
         f"{prefix_log_file}_{datetime.datetime.now().strftime('%Y%m%d')}.log"
     )
-    # pylint: disable=line-too-long
+
+    # Define log colors
+    log_colors_config = {
+        "DEBUG": "cyan",
+        "INFO": "green",
+        "WARNING": "yellow",
+        "ERROR": "red",
+        "CRITICAL": "red",
+    }
+
+    # Create a stream handler with color support
+    color_stream_handler = colorlog.StreamHandler()
+    color_stream_handler.setFormatter(
+        colorlog.ColoredFormatter(
+            fmt="%(log_color)s%(asctime)s.%(msecs)d %(filename)s:%(lineno)d:%(funcName)s() %(levelname)s %(message)s",
+            datefmt="%A,%d/%m/%Y|%H:%M:%S",
+            log_colors=log_colors_config,
+        )
+    )
+
+    # Configure the logger
     logging.basicConfig(
-        format="%(asctime)s.%(msecs)d %(filename)s:%(lineno)d:%(funcName)s() %(levelname)s %(message)s",
-        datefmt="%A,%d/%m/%Y|%H:%M:%S",
         handlers=[
-            logging.StreamHandler(sys.stdout),
+            color_stream_handler,
             logging.FileHandler(log_file),
         ],
         level=log_level,
     )
+
+    return logging.getLogger(prefix_log_file)
 
 
 def download_scrip_master(file_id="NFO_symbols"):

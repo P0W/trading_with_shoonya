@@ -84,6 +84,32 @@ def get_staddle_strike(shoonya_api, symbol_index):
         pe_quotes = shoonya_api.get_quotes(
             exchange=EXCHANGE[symbol_index], token=str(pe_token)
         )
+        premium_collected = float(ce_quotes["lp"]) + float(pe_quotes["lp"])
+        ## get sl strike as straddle minus premium collected roundede to nearest INDICES_ROUNDING[symbol_index]
+        ce_sl = (
+            round((nearest + premium_collected) / INDICES_ROUNDING[symbol_index])
+            * INDICES_ROUNDING[symbol_index]
+        )
+        pe_sl = (
+            round((nearest - premium_collected) / INDICES_ROUNDING[symbol_index])
+            * INDICES_ROUNDING[symbol_index]
+        )
+        ce_sl_strike = f"{symbol_index}{expiry_date}C{ce_sl}"
+        pe_sl_strike = f"{symbol_index}{expiry_date}P{pe_sl}"
+        ## find the token for the strike
+        ce_sl_token = df[df["TradingSymbol"] == ce_sl_strike]["Token"].values[0]
+        pe_sl_token = df[df["TradingSymbol"] == pe_sl_strike]["Token"].values[0]
+        ce_sl_quotes = shoonya_api.get_quotes(
+            exchange=EXCHANGE[symbol_index], token=str(ce_sl_token)
+        )
+        pe_sl_quotes = shoonya_api.get_quotes(
+            exchange=EXCHANGE[symbol_index], token=str(pe_sl_token)
+        )
+        ce_sl_ltp = float(ce_sl_quotes["lp"])
+        pe_sl_ltp = float(pe_sl_quotes["lp"])
+        if ce_sl_token == ce_token or pe_sl_token == pe_token:
+            logging.error("Cannot do the iron fly strategy, exiting!")
+            sys.exit(-1)
         return {
             "ce_code": str(ce_token),
             "pe_code": str(pe_token),
@@ -91,6 +117,12 @@ def get_staddle_strike(shoonya_api, symbol_index):
             "pe_strike": pe_strike,
             "ce_ltp": float(ce_quotes["lp"]),
             "pe_ltp": float(pe_quotes["lp"]),
+            "ce_sl_code": str(ce_sl_token),
+            "pe_sl_code": str(pe_sl_token),
+            "ce_sl_strike": ce_sl_strike,
+            "pe_sl_strike": pe_sl_strike,
+            "ce_sl_ltp": ce_sl_ltp,
+            "pe_sl_ltp": pe_sl_ltp,
         }
     return None
 
@@ -99,7 +131,7 @@ def login(shoonya_api, force=False):
     """
     Login to the Shoonya API
     """
-    ACCESS_TOKEN_KEY = "access_token"  ## pylint: disable=invalid-name
+    ACCESS_TOKEN_KEY = "access_token_shoonya"  ## pylint: disable=invalid-name
     try:
         redis_client = redis.Redis()
         access_token = redis_client.get(ACCESS_TOKEN_KEY)
@@ -281,6 +313,7 @@ class LiveFeedManager:
         self.premium_left = 0.0
         self.exchange = get_exchange(self.strikes["ce_strike"])
         self.subscribed_symbols = set()
+        self.tick_data = {}
 
     def event_handler_feed_update(self, tick_data):
         """
@@ -297,14 +330,15 @@ class LiveFeedManager:
                 return
             msg = []
             if "lp" in tick_data and self.in_position:
+                self.tick_data[tick_data["tk"]] = float(tick_data["lp"])
                 if tick_data["tk"] == self.strikes["ce_code"]:
-                    self.pnl[tick_data["tk"]] = self.strikes["ce_ltp"] - float(
-                        tick_data["lp"]
+                    self.pnl[tick_data["tk"]] = (
+                        self.strikes["ce_ltp"] - self.tick_data[tick_data["tk"]]
                     )
                     msg.append(f"CE lp: {float(tick_data['lp'])}")
                 elif tick_data["tk"] == self.strikes["pe_code"]:
-                    self.pnl[tick_data["tk"]] = self.strikes["pe_ltp"] - float(
-                        tick_data["lp"]
+                    self.pnl[tick_data["tk"]] = (
+                        self.strikes["pe_ltp"] - self.tick_data[tick_data["tk"]]
                     )
                     msg.append(f"PE lp: {float(tick_data['lp'])}")
             if len(self.pnl) == 2:
@@ -332,15 +366,17 @@ class LiveFeedManager:
         """
         if order_data["status"] == "COMPLETE" and order_data["reporttype"] == "Fill":
             flprc = float(order_data["flprc"])
-            flqty = int(order_data["flqty"])
+            fillshares = int(order_data["fillshares"])
             if order_data["remarks"] == "pe_straddle_stop_loss":
                 logging.info("Stop loss hit for PE, unsubscribing")
                 self.unsubscribe([f"{self.exchange}|{self.strikes['pe_code']}"])
-                self.premium_left += flprc * flqty
+                self.premium_left += flprc * fillshares
+                self.tick_data[self.strikes["pe_code"]] = flprc
             elif order_data["remarks"] == "ce_straddle_stop_loss":
                 logging.info("Stop loss hit for CE, unsubscribing")
                 self.unsubscribe([f"{self.exchange}|{self.strikes['ce_code']}"])
-                self.premium_left += flprc * flqty
+                self.premium_left += flprc * fillshares
+                self.tick_data[self.strikes["ce_code"]] = flprc
             elif self.is_empty():
                 logging.info("All positions closed, exiting")
                 self.running = False
@@ -352,7 +388,7 @@ class LiveFeedManager:
                 or order_data["remarks"] == "pe_straddle"
             ):
                 logging.info("Straddle Placed %s", order_data["remarks"])
-                qty = flqty
+                qty = fillshares
                 lp = flprc
                 tsym = order_data["tsym"]
                 remarks = order_data["remarks"]
@@ -367,7 +403,7 @@ class LiveFeedManager:
                 order_data["remarks"] == "ce_straddle_exit"
                 or order_data["remarks"] == "pe_straddle_exit"
             ):
-                self.premium_left += flqty * flprc
+                self.premium_left += fillshares * flprc
         logging.info("order update %s", json.dumps(order_data, indent=2))
 
     def subscribe(self, symbols_list):
@@ -395,7 +431,7 @@ class LiveFeedManager:
         Is empty
         """
         return len(self.subscribed_symbols) == 0
-    
+
     def day_over(self):
         """
         Day over
@@ -496,9 +532,8 @@ args = args.parse_args()
 
 
 if __name__ == "__main__":
-    configure_logger(args.log_level)
     # subscribe to multiple tokens
-    logging = logging.getLogger(__name__)
+    logging = configure_logger(args.log_level)
     index = args.index
     quantity = args.qty
     exchange = EXCHANGE[index]
@@ -542,9 +577,10 @@ if __name__ == "__main__":
     orders = place_straddle(api, strikes, args.qty)
     if orders:
         live_feed_manager.update_orders(orders)
-    while live_feed_manager.is_running():
+    while live_feed_manager.is_running() and not live_feed_manager.day_over():
         pass
     logging.info("Exiting")
-    time.sleep(2)
+    time.sleep(5)
     live_feed_manager.stop()
+    time.sleep(2)
     logging.info("Good Bye!")
