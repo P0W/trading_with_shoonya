@@ -14,157 +14,18 @@ import logging
 import sys
 import time
 
-import pandas as pd
-import pyotp
-import redis
-import yaml
-from NorenRestApiPy.NorenApi import NorenApi
+from client_shoonya import ShoonyaApiPy
 
 # from api_helper import ShoonyaApiPy
 
 from utils import configure_logger
-from utils import download_scrip_master
 from utils import full_stack
 from utils import round_to_point5
 from utils import validate
 from utils import get_exchange
+from utils import get_staddle_strike
 
-from const import INDICES_ROUNDING
-from const import INDICES_TOKEN
 from const import EXCHANGE
-
-
-class ShoonyaApiPy(NorenApi):
-    """
-    Shoonya API Initializer
-    """
-
-    def __init__(self):
-        NorenApi.__init__(
-            self,
-            host="https://api.shoonya.com/NorenWClientTP/",
-            websocket="wss://api.shoonya.com/NorenWSTP/",
-        )
-
-
-## pylint: disable=too-many-locals
-def get_staddle_strike(shoonya_api, symbol_index):
-    """
-    Get the nearest strike for the index
-    """
-    df = download_scrip_master(file_id=f"{EXCHANGE[symbol_index]}_symbols")
-    df = df[df["Symbol"] == symbol_index]
-    ## the Expiry column is in format 28-DEC-2023
-    ## convert to datetime an dfind the closest expiry
-    df["Expiry"] = pd.to_datetime(df["Expiry"], format="%d-%b-%Y")
-    df["diff"] = df["Expiry"] - datetime.datetime.now()
-    df["diff"] = df["diff"].abs()
-    df = df.sort_values(by="diff")
-    ## get the Expiry date
-    expiry_date = df.iloc[0]["Expiry"]
-    ## convert to 06DEC23
-    expiry_date = expiry_date.strftime("%d%b%y").upper()
-    ret = shoonya_api.get_quotes(
-        exchange=get_exchange(symbol_index, is_index=True),
-        token=str(INDICES_TOKEN[symbol_index]),
-    )
-    if ret:
-        ltp = float(ret["lp"])
-        ## round to nearest INDICES_ROUNDING
-        nearest = (
-            round(ltp / INDICES_ROUNDING[symbol_index]) * INDICES_ROUNDING[symbol_index]
-        )
-        ce_strike = f"{symbol_index}{expiry_date}C{nearest}"
-        pe_strike = f"{symbol_index}{expiry_date}P{nearest}"
-        ## find the token for the strike
-        ce_token = df[df["TradingSymbol"] == ce_strike]["Token"].values[0]
-        pe_token = df[df["TradingSymbol"] == pe_strike]["Token"].values[0]
-        ce_quotes = shoonya_api.get_quotes(
-            exchange=EXCHANGE[symbol_index], token=str(ce_token)
-        )
-        pe_quotes = shoonya_api.get_quotes(
-            exchange=EXCHANGE[symbol_index], token=str(pe_token)
-        )
-        premium = float(ce_quotes["lp"]) + float(pe_quotes["lp"])
-        ## get sl strike as straddle minus premium collected roundede to
-        ## nearest INDICES_ROUNDING[symbol_index]
-        ce_sl = (
-            round((nearest + premium) / INDICES_ROUNDING[symbol_index])
-            * INDICES_ROUNDING[symbol_index]
-        )
-        pe_sl = (
-            round((nearest - premium) / INDICES_ROUNDING[symbol_index])
-            * INDICES_ROUNDING[symbol_index]
-        )
-        ce_sl_strike = f"{symbol_index}{expiry_date}C{ce_sl}"
-        pe_sl_strike = f"{symbol_index}{expiry_date}P{pe_sl}"
-        ## find the token for the strike
-        ce_sl_token = df[df["TradingSymbol"] == ce_sl_strike]["Token"].values[0]
-        pe_sl_token = df[df["TradingSymbol"] == pe_sl_strike]["Token"].values[0]
-        ce_sl_quotes = shoonya_api.get_quotes(
-            exchange=EXCHANGE[symbol_index], token=str(ce_sl_token)
-        )
-        pe_sl_quotes = shoonya_api.get_quotes(
-            exchange=EXCHANGE[symbol_index], token=str(pe_sl_token)
-        )
-        ce_sl_ltp = float(ce_sl_quotes["lp"])
-        pe_sl_ltp = float(pe_sl_quotes["lp"])
-        if ce_sl_token == ce_token or pe_sl_token == pe_token:
-            logging.error("Cannot do the iron fly strategy, exiting!")
-            sys.exit(-1)
-        return {
-            "ce_code": str(ce_token),
-            "pe_code": str(pe_token),
-            "ce_strike": ce_strike,
-            "pe_strike": pe_strike,
-            "ce_ltp": float(ce_quotes["lp"]),
-            "pe_ltp": float(pe_quotes["lp"]),
-            "ce_sl_code": str(ce_sl_token),
-            "pe_sl_code": str(pe_sl_token),
-            "ce_sl_strike": ce_sl_strike,
-            "pe_sl_strike": pe_sl_strike,
-            "ce_sl_ltp": ce_sl_ltp,
-            "pe_sl_ltp": pe_sl_ltp,
-        }
-    return None
-
-
-def login(shoonya_api, force=False):
-    """
-    Login to the Shoonya API
-    """
-    ACCESS_TOKEN_KEY = "access_token_shoonya"  ## pylint: disable=invalid-name
-    try:
-        redis_client = redis.Redis()
-        access_token = redis_client.get(ACCESS_TOKEN_KEY)
-        if access_token and not force:
-            access_token = access_token.decode("utf-8")
-            with open("cred.yml", encoding="utf-8") as f:
-                cred = yaml.load(f, Loader=yaml.FullLoader)
-                shoonya_api.set_session(cred["user"], cred["pwd"], access_token)
-            logging.info("Access token found in cache, logging in")
-        else:
-            raise ValueError("No access token found")
-    except Exception as ex:  ## pylint: disable=broad-except
-        logging.warning("No access token found in cache, logging in: %s", ex)
-        with open("cred.yml", encoding="utf-8") as f:
-            cred = yaml.load(f, Loader=yaml.FullLoader)
-
-            ret = shoonya_api.login(
-                userid=cred["user"],
-                password=cred["pwd"],
-                twoFA=pyotp.TOTP(cred["totp_pin"]).now(),
-                vendor_code=cred["vc"],
-                api_secret=cred["apikey"],
-                imei=cred["imei"],
-            )
-            susertoken = ret["susertoken"]
-            try:
-                redis_client.set(
-                    ACCESS_TOKEN_KEY, susertoken, ex=2 * 60 * 60
-                )  # 2 hours expiry
-            except Exception:  ## pylint: disable=broad-except
-                pass
 
 
 def place_straddle(shoonya_api, strikes_data, qty):
@@ -506,6 +367,8 @@ args.add_argument(
         "EURINR",
         "GBPINR",
         "JPYINR",
+        "BANKEX",
+        "SENSEX",
     ],
 )
 args.add_argument("--qty", required=True, type=int, help="Quantity to trade")
@@ -530,6 +393,12 @@ args.add_argument(
     default=False,
     help="Show strikes only and exit",
 )
+## expiry is need only when index is SENSEX or BANKEX
+args.add_argument(
+    "--expiry",
+    default=None,
+    help="Expiry date in YYMD format",
+)
 args = args.parse_args()
 
 
@@ -539,11 +408,11 @@ if __name__ == "__main__":
     index = args.index
     quantity = args.qty
     exchange = EXCHANGE[index]
+    expiry = args.expiry
     ## validate the quantity
     validate(quantity, index)
     api = ShoonyaApiPy()
-    login(api, args.force)
-    strikes = get_staddle_strike(api, index)
+    strikes = get_staddle_strike(api, index, expiry)
     premium_collected = strikes["ce_ltp"] + strikes["pe_ltp"]
     target_pnl = premium_collected * (args.target)
     stop_loss = premium_collected * (args.sl_factor - 1)

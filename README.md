@@ -22,4 +22,3 @@ To install the project, follow these steps:
    python .\shoonya.py --show-strikes --qty 500 --index NIFTY
    python .\shoonya.py --qty 75 --index BANKNIFTY --target 0.25 
 ```
-

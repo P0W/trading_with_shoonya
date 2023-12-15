@@ -32,11 +32,11 @@ class ShoonyaApiPy(NorenApi):
                 with open("cred.yml", encoding="utf-8") as f:
                     cred = yaml.load(f, Loader=yaml.FullLoader)
                     self.set_session(cred["user"], cred["pwd"], access_token)
-                logging.info("Access token found in cache, logging in")
+                logging.debug("Access token found in cache, logging in")
             else:
                 raise ValueError("No access token found")
         except Exception as ex:  ## pylint: disable=broad-except
-            logging.warning("No access token found in cache, logging in: %s", ex)
+            logging.debug("No access token found in cache, logging in: %s", ex)
             with open("cred.yml", encoding="utf-8") as f:
                 cred = yaml.load(f, Loader=yaml.FullLoader)
 
@@ -55,3 +55,13 @@ class ShoonyaApiPy(NorenApi):
                     )  # 2 hours expiry
                 except Exception:  ## pylint: disable=broad-except
                     pass
+
+
+if __name__ == "__main__":
+    api = ShoonyaApiPy()
+    import json
+
+    exch = "BSE"
+    query = "BANKEX"  # multiple criteria to narrow results
+    ret = api.searchscrip(exchange=exch, searchtext=query)
+    print(json.dumps(ret, indent=2))

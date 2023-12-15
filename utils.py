@@ -16,6 +16,7 @@ import colorlog
 from const import INDICES_TOKEN
 from const import LOT_SIZE
 from const import EXCHANGE
+from const import INDICES_ROUNDING
 
 
 def round_to_point5(x):
@@ -184,11 +185,116 @@ def get_exchange(tradingsymbol, is_index=False):
     if is_index:
         if tradingsymbol in ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]:
             return "NSE"
-        if tradingsymbol in ["SENSEX"]:
+        if tradingsymbol in ["SENSEX", "BANKEX"]:
             return "BSE"
         if tradingsymbol in ["USDINR", "EURINR", "GBPINR", "JPYINR"]:
             return "CDS"
     return EXCHANGE[get_index(tradingsymbol)]
+
+
+def get_strike(symbol_index, expiry_date, nearest, ctype):
+    """
+    Get the strike name from the trading symbol
+    """
+    if symbol_index in ["SENSEX", "BANKEX"]:
+        return f"{symbol_index}{expiry_date}{nearest}{ctype}"
+    return f"{symbol_index}{expiry_date}{ctype[0]}{nearest}"
+
+
+def get_closest_expiry(symbol_index, cli_expiry=None):
+    """
+    Get the closest expiry date
+    """
+    df = download_scrip_master(file_id=f"{EXCHANGE[symbol_index]}_symbols")
+    if symbol_index == "SENSEX" or symbol_index == "BANKEX" and cli_expiry:
+        expiry_date = cli_expiry
+    else:
+        df = df[df["Symbol"] == symbol_index]
+        df["Expiry"] = pd.to_datetime(df["Expiry"], format="%d-%b-%Y")
+        df["diff"] = df["Expiry"] - datetime.datetime.now()
+        df["diff"] = df["diff"].abs()
+        df = df.sort_values(by="diff")
+        ## get the Expiry date
+        expiry_date = df.iloc[0]["Expiry"]
+        ## convert to 06DEC23
+        expiry_date = expiry_date.strftime("%d%b%y").upper()
+    return expiry_date, df
+
+
+## pylint: disable=too-many-locals
+def get_staddle_strike(shoonya_api, symbol_index, cli_expiry=None):
+    """
+    Get the nearest strike for the index
+    """
+    ## convert to 06DEC23
+    expiry_date, df = get_closest_expiry(symbol_index, cli_expiry)
+    ret = shoonya_api.get_quotes(
+        exchange=get_exchange(symbol_index, is_index=True),
+        token=str(INDICES_TOKEN[symbol_index]),
+    )
+    if ret:
+        ltp = float(ret["lp"])
+        ## round to nearest INDICES_ROUNDING
+        nearest = (
+            round(ltp / INDICES_ROUNDING[symbol_index]) * INDICES_ROUNDING[symbol_index]
+        )
+        logging.debug("LTP %.2f | Nearest %.2f", ltp, nearest)
+        ce_strike = get_strike(symbol_index, expiry_date, nearest, "CE")
+        pe_strike = get_strike(symbol_index, expiry_date, nearest, "PE")
+        logging.info("CE Strike %s | PE Strike %s", ce_strike, pe_strike)
+        ## find the token for the strike
+        ce_token = df[df["TradingSymbol"] == ce_strike]["Token"].values[0]
+        pe_token = df[df["TradingSymbol"] == pe_strike]["Token"].values[0]
+        ce_quotes = shoonya_api.get_quotes(
+            exchange=EXCHANGE[symbol_index], token=str(ce_token)
+        )
+        pe_quotes = shoonya_api.get_quotes(
+            exchange=EXCHANGE[symbol_index], token=str(pe_token)
+        )
+        premium = float(ce_quotes["lp"]) + float(pe_quotes["lp"])
+        ## get sl strike as straddle minus premium collected roundede to
+        ## nearest INDICES_ROUNDING[symbol_index]
+        ce_sl = (
+            round((nearest + premium) / INDICES_ROUNDING[symbol_index])
+            * INDICES_ROUNDING[symbol_index]
+        )
+        pe_sl = (
+            round((nearest - premium) / INDICES_ROUNDING[symbol_index])
+            * INDICES_ROUNDING[symbol_index]
+        )
+        logging.debug("CE SL %.2f | PE SL %.2f", ce_sl, pe_sl)
+        ce_sl_strike = get_strike(symbol_index, expiry_date, ce_sl, "CE")
+        pe_sl_strike = get_strike(symbol_index, expiry_date, pe_sl, "PE")
+        logging.info("CE SL Strike %s | PE SL Strike %s", ce_sl_strike, pe_sl_strike)
+        ## find the token for the strike
+        ce_sl_token = df[df["TradingSymbol"] == ce_sl_strike]["Token"].values[0]
+        pe_sl_token = df[df["TradingSymbol"] == pe_sl_strike]["Token"].values[0]
+        ce_sl_quotes = shoonya_api.get_quotes(
+            exchange=EXCHANGE[symbol_index], token=str(ce_sl_token)
+        )
+        pe_sl_quotes = shoonya_api.get_quotes(
+            exchange=EXCHANGE[symbol_index], token=str(pe_sl_token)
+        )
+        ce_sl_ltp = float(ce_sl_quotes["lp"])
+        pe_sl_ltp = float(pe_sl_quotes["lp"])
+        if ce_sl_token == ce_token or pe_sl_token == pe_token:
+            logging.error("Cannot do the iron fly strategy, exiting!")
+            sys.exit(-1)
+        return {
+            "ce_code": str(ce_token),
+            "pe_code": str(pe_token),
+            "ce_strike": ce_strike,
+            "pe_strike": pe_strike,
+            "ce_ltp": float(ce_quotes["lp"]),
+            "pe_ltp": float(pe_quotes["lp"]),
+            "ce_sl_code": str(ce_sl_token),
+            "pe_sl_code": str(pe_sl_token),
+            "ce_sl_strike": ce_sl_strike,
+            "pe_sl_strike": pe_sl_strike,
+            "ce_sl_ltp": ce_sl_ltp,
+            "pe_sl_ltp": pe_sl_ltp,
+        }
+    return None
 
 
 refresh_indices_code()
