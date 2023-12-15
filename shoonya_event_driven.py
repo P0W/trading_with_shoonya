@@ -123,12 +123,13 @@ def main(args):
             retention=cbk_args["retention"],
             remarks=cbk_args["remarks"],
         )
+        tradingsymbol = cbk_args["tradingsymbol"]
         fillshares = int(cbk_args["fillshares"])
         flprc = float(cbk_args["flprc"])
         buy_or_sell = cbk_args["trantype"]
         code = cbk_args["code"]
         norenordno = cbk_args["norenordno"]
-        exchange = get_exchange(cbk_args["tradingsymbol"])
+        exchange = get_exchange(tradingsymbol)
         evt_engine.subscribe([f"{exchange}|{code}"])
         evt_engine.add_symbol_init_data(
             symbol_code=code,
@@ -136,6 +137,7 @@ def main(args):
             avg_price=flprc,
             buy_or_sell=buy_or_sell,
             norenordno=norenordno,
+            tradingsymbol=tradingsymbol,
         )
         ## We'd need the response to get the order number of the stop loss order
         ## to cancel it when the target is hit
@@ -152,6 +154,7 @@ def main(args):
         buy_or_sell = cbk_args["trantype"]
         code = cbk_args["code"]
         norenordno = cbk_args["norenordno"]
+        tradingsymbol = cbk_args["tsym"]
         evt_engine.subscribe([instrument])
         evt_engine.add_symbol_init_data(
             symbol_code=code,
@@ -159,6 +162,7 @@ def main(args):
             avg_price=flprc,
             buy_or_sell=buy_or_sell,
             norenordno=norenordno,
+            tradingsymbol=tradingsymbol,
         )
 
     if args.show_strikes:

@@ -34,7 +34,7 @@ class EventEngine:
         self.in_position = False
 
     def add_symbol_init_data(
-        self, symbol_code, qty, avg_price, buy_or_sell, norenordno
+        self, symbol_code, qty, avg_price, buy_or_sell, norenordno, tradingsymbol
     ):
         """
         Add symbol init data
@@ -52,6 +52,7 @@ class EventEngine:
             "avg_price": avg_price,
             "buy_or_sell": buy_or_sell,
             "norenordno": norenordno,
+            "tradingsymbol": tradingsymbol,
         }
         self.in_position = True
 
@@ -91,7 +92,13 @@ class EventEngine:
                 lp = float(tick_data["lp"])
                 tk = tick_data["tk"]
                 self.tick_data[tk] = self._get_pnl(tk, lp)
+                msg = ""
+                for symbol, pnl in self.tick_data.items():
+                    msg += f"{self.existing_orders[symbol]}={pnl:.2f} "
                 total_pnl = sum(self.tick_data.values())
+                logging.info(
+                    "PNL: %s | Total: %.2f | Target %.2f", msg, total_pnl, self.target
+                )
                 self.running = self._monitor_function(total_pnl)
         except Exception as ex:  ## pylint: disable=broad-except
             logging.error("Exception in feed update: %s", ex)
@@ -146,8 +153,6 @@ class EventEngine:
                         {},
                     )
             continue_running = False
-        else:
-            logging.info("PNL %.2f | Target %.2f", pnl, self.target)
         return continue_running
 
     def _exit_complete(self, _args):
