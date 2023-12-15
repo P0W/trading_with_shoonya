@@ -8,11 +8,12 @@ INDICES_TOKEN = {
     "FINNIFTY": "26037",
     "INDIAVIX": "26017",
     "MIDCPNIFTY": "26074",
-    "SENSEX": "26001",
+    "SENSEX": "1",
     "USDINR": "1",
     "EURINR": "25",
     "GBPINR": "26",
     "JPYINR": "27",
+    "BANKEX": "12",
 }
 
 INDICES_ROUNDING = {
@@ -25,6 +26,7 @@ INDICES_ROUNDING = {
     "EURINR": 0.25,
     "GBPINR": 0.25,
     "JPYINR": 0.25,
+    "BANKEX": 100,
 }
 
 LOT_SIZE = {
@@ -32,6 +34,7 @@ LOT_SIZE = {
     "BANKNIFTY": 15,
     "FINNIFTY": 40,
     "SENSEX": 10,
+    "BANKEX": 15,
     "MIDCPNIFTY": 75,
     "USDINR": 1000,
     "EURINR": 1000,
@@ -44,10 +47,26 @@ EXCHANGE = {
     "BANKNIFTY": "NFO",
     "FINNIFTY": "NFO",
     "SENSEX": "BFO",
+    "BANKEX": "BFO",
     "MIDCPNIFTY": "NFO",
     "INDIAVIX": "NFO",
     "USDINR": "CDS",
     "EURINR": "CDS",
     "GBPINR": "CDS",
     "JPYINR": "CDS",
+}
+
+
+SCRIP_SYMBOL_NAME = {
+    "NIFTY": "NIFTY",
+    "BANKNIFTY": "BANKNIFTY",
+    "FINNIFTY": "FINNIFTY",
+    "SENSEX": "BSXOPT",
+    "BANKEX": "BKXOPT",
+    "MIDCPNIFTY": "MIDCPNIFTY",
+    "INDIAVIX": "INDIAVIX",
+    "USDINR": "USDINR",
+    "EURINR": "EURINR",
+    "GBPINR": "GBPINR",
+    "JPYINR": "JPYINR",
 }
