@@ -9,14 +9,17 @@ import sys
 import traceback
 import zipfile
 
+import colorlog
 import pandas as pd
 import requests
-import colorlog
 
-from const import INDICES_TOKEN
-from const import LOT_SIZE
 from const import EXCHANGE
 from const import INDICES_ROUNDING
+from const import INDICES_TOKEN
+from const import LOT_SIZE
+from const import SCRIP_SYMBOL_NAME
+
+logger = logging.getLogger(__name__)
 
 
 def round_to_point5(x):
@@ -47,10 +50,10 @@ def validate(index_qty, index_value):
     Validate the quantity
     """
     if index_value not in INDICES_TOKEN:
-        logging.error("Invalid index %s", index_value)
+        logger.error("Invalid index %s", index_value)
         sys.exit(-1)
     if index_qty % LOT_SIZE[index_value] != 0:
-        logging.error("Quantity must be multiple of %s", LOT_SIZE[index_value])
+        logger.error("Quantity must be multiple of %s", LOT_SIZE[index_value])
         sys.exit(-1)
 
 
@@ -59,7 +62,7 @@ def configure_logger(log_level, prefix_log_file: str = "shoonya_daily_short"):
     """
     Configure the logger
     """
-    # Setup logging
+    # Setup logger
     # create a directory logs if it does not exist
     pathlib.Path.mkdir(pathlib.Path("logs"), exist_ok=True)
     # Create a filename suffixed with current date DDMMYY format with
@@ -87,7 +90,7 @@ def configure_logger(log_level, prefix_log_file: str = "shoonya_daily_short"):
         )
     )
 
-    # Configure the logger
+    # Configure the logging
     logging.basicConfig(
         format="%(levelname)s:%(name)s:%(asctime)s.%(msecs)d %(filename)s:%(lineno)d:%(funcName)s() %(message)s",
         datefmt="%A,%d/%m/%Y|%H:%M:%S",
@@ -121,10 +124,10 @@ def download_scrip_master(file_id="NFO_symbols"):
         os.mkdir(downloads_folder)
     if not os.path.exists(todays_nse_fo):
         shoonya_url = f"https://api.shoonya.com/{file_id}.txt.zip"
-        logging.info("Downloading file %s", shoonya_url)
+        logger.info("Downloading file %s", shoonya_url)
         nse_fo = requests.get(shoonya_url, timeout=15)
         if nse_fo.status_code != 200:
-            logging.error("Could not download file")
+            logger.error("Could not download file")
             return None
         with open(zip_file_name, "wb") as f:
             f.write(nse_fo.content)
@@ -192,42 +195,41 @@ def get_exchange(tradingsymbol, is_index=False):
     return EXCHANGE[get_index(tradingsymbol)]
 
 
-def get_strike(symbol_index, expiry_date, nearest, ctype):
+def get_strike(df, expiry_date, nearest, ctype):
     """
     Get the strike name from the trading symbol
     """
-    if symbol_index in ["SENSEX", "BANKEX"]:
-        return f"{symbol_index}{expiry_date}{nearest}{ctype}"
-    return f"{symbol_index}{expiry_date}{ctype[0]}{nearest}"
+    df = df[
+        (df["Expiry"] == expiry_date)
+        & (df["OptionType"] == ctype)
+        & (df["StrikePrice"] == nearest)
+    ]
+    ## get the TradingSymbol
+    return df["TradingSymbol"].values[0]
 
 
-def get_closest_expiry(symbol_index, cli_expiry=None):
+def get_closest_expiry(symbol_index):
     """
     Get the closest expiry date
     """
     df = download_scrip_master(file_id=f"{EXCHANGE[symbol_index]}_symbols")
-    if symbol_index == "SENSEX" or symbol_index == "BANKEX" and cli_expiry:
-        expiry_date = cli_expiry
-    else:
-        df = df[df["Symbol"] == symbol_index]
-        df["Expiry"] = pd.to_datetime(df["Expiry"], format="%d-%b-%Y")
-        df["diff"] = df["Expiry"] - datetime.datetime.now()
-        df["diff"] = df["diff"].abs()
-        df = df.sort_values(by="diff")
-        ## get the Expiry date
-        expiry_date = df.iloc[0]["Expiry"]
-        ## convert to 06DEC23
-        expiry_date = expiry_date.strftime("%d%b%y").upper()
+    scrip_symbol_name = SCRIP_SYMBOL_NAME[symbol_index]
+    df = df[df["Symbol"] == scrip_symbol_name]
+    df["Expiry"] = pd.to_datetime(df["Expiry"], format="%d-%b-%Y")
+    df["diff"] = df["Expiry"] - datetime.datetime.now()
+    df["diff"] = df["diff"].abs()
+    df = df.sort_values(by="diff")
+    expiry_date = df.iloc[0]["Expiry"]
     return expiry_date, df
 
 
 ## pylint: disable=too-many-locals
-def get_staddle_strike(shoonya_api, symbol_index, cli_expiry=None):
+def get_staddle_strike(shoonya_api, symbol_index):
     """
     Get the nearest strike for the index
     """
     ## convert to 06DEC23
-    expiry_date, df = get_closest_expiry(symbol_index, cli_expiry)
+    expiry_date, df = get_closest_expiry(symbol_index)
     ret = shoonya_api.get_quotes(
         exchange=get_exchange(symbol_index, is_index=True),
         token=str(INDICES_TOKEN[symbol_index]),
@@ -238,10 +240,10 @@ def get_staddle_strike(shoonya_api, symbol_index, cli_expiry=None):
         nearest = (
             round(ltp / INDICES_ROUNDING[symbol_index]) * INDICES_ROUNDING[symbol_index]
         )
-        logging.debug("LTP %.2f | Nearest %.2f", ltp, nearest)
-        ce_strike = get_strike(symbol_index, expiry_date, nearest, "CE")
-        pe_strike = get_strike(symbol_index, expiry_date, nearest, "PE")
-        logging.info("CE Strike %s | PE Strike %s", ce_strike, pe_strike)
+        logger.info("LTP %.2f | Nearest %.2f", ltp, nearest)
+        ce_strike = get_strike(df, expiry_date, nearest, "CE")
+        pe_strike = get_strike(df, expiry_date, nearest, "PE")
+        logger.info("CE Strike %s | PE Strike %s", ce_strike, pe_strike)
         ## find the token for the strike
         ce_token = df[df["TradingSymbol"] == ce_strike]["Token"].values[0]
         pe_token = df[df["TradingSymbol"] == pe_strike]["Token"].values[0]
@@ -262,10 +264,10 @@ def get_staddle_strike(shoonya_api, symbol_index, cli_expiry=None):
             round((nearest - premium) / INDICES_ROUNDING[symbol_index])
             * INDICES_ROUNDING[symbol_index]
         )
-        logging.debug("CE SL %.2f | PE SL %.2f", ce_sl, pe_sl)
-        ce_sl_strike = get_strike(symbol_index, expiry_date, ce_sl, "CE")
-        pe_sl_strike = get_strike(symbol_index, expiry_date, pe_sl, "PE")
-        logging.info("CE SL Strike %s | PE SL Strike %s", ce_sl_strike, pe_sl_strike)
+        logger.debug("CE SL %.2f | PE SL %.2f", ce_sl, pe_sl)
+        ce_sl_strike = get_strike(df, expiry_date, ce_sl, "CE")
+        pe_sl_strike = get_strike(df, expiry_date, pe_sl, "PE")
+        logger.info("CE SL Strike %s | PE SL Strike %s", ce_sl_strike, pe_sl_strike)
         ## find the token for the strike
         ce_sl_token = df[df["TradingSymbol"] == ce_sl_strike]["Token"].values[0]
         pe_sl_token = df[df["TradingSymbol"] == pe_sl_strike]["Token"].values[0]
@@ -278,7 +280,7 @@ def get_staddle_strike(shoonya_api, symbol_index, cli_expiry=None):
         ce_sl_ltp = float(ce_sl_quotes["lp"])
         pe_sl_ltp = float(pe_sl_quotes["lp"])
         if ce_sl_token == ce_token or pe_sl_token == pe_token:
-            logging.error("Cannot do the iron fly strategy, exiting!")
+            logger.error("Cannot do the iron fly strategy, exiting!")
             sys.exit(-1)
         return {
             "ce_code": str(ce_token),

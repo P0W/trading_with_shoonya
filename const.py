@@ -55,3 +55,18 @@ EXCHANGE = {
     "GBPINR": "CDS",
     "JPYINR": "CDS",
 }
+
+
+SCRIP_SYMBOL_NAME = {
+    "NIFTY": "NIFTY",
+    "BANKNIFTY": "BANKNIFTY",
+    "FINNIFTY": "FINNIFTY",
+    "SENSEX": "BSXOPT",
+    "BANKEX": "BKXOPT",
+    "MIDCPNIFTY": "MIDCPNIFTY",
+    "INDIAVIX": "INDIAVIX",
+    "USDINR": "USDINR",
+    "EURINR": "EURINR",
+    "GBPINR": "GBPINR",
+    "JPYINR": "JPYINR",
+}

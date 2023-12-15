@@ -1,3 +1,6 @@
+"""
+    Shoonaya API Client with login caching
+"""
 import logging
 import pyotp
 import redis
@@ -55,13 +58,3 @@ class ShoonyaApiPy(NorenApi):
                     )  # 2 hours expiry
                 except Exception:  ## pylint: disable=broad-except
                     pass
-
-
-if __name__ == "__main__":
-    api = ShoonyaApiPy()
-    import json
-
-    exch = "BSE"
-    query = "BANKEX"  # multiple criteria to narrow results
-    ret = api.searchscrip(exchange=exch, searchtext=query)
-    print(json.dumps(ret, indent=2))

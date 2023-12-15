@@ -8,9 +8,9 @@ import time
 
 from client_shoonya import ShoonyaApiPy
 from event_engine import EventEngine
-from utils import get_staddle_strike
 from utils import configure_logger
 from utils import get_exchange
+from utils import get_staddle_strike
 from utils import round_to_point5
 from utils import validate
 
@@ -57,12 +57,6 @@ def parse_args():
         default=False,
         help="Show strikes only and exit",
     )
-    ## expiry is need only when index is SENSEX or BANKEX
-    args.add_argument(
-        "--expiry",
-        default=None,
-        help="Expiry date in YYYY-MM-DD format | default is next Thursday",
-    )
 
     return args.parse_args()
 
@@ -81,12 +75,11 @@ def main(args):
     sl_factor = args.sl_factor
     target = args.target
     index = args.index
-    expiry = args.expiry
 
     ## validate the quantity
     validate(qty, index)
 
-    strikes_data = get_staddle_strike(api, index, expiry)
+    strikes_data = get_staddle_strike(api, index)
 
     premium = args.qty * (float(strikes_data["ce_ltp"]) + float(strikes_data["pe_ltp"]))
     target_mtm = premium * target

@@ -393,12 +393,7 @@ args.add_argument(
     default=False,
     help="Show strikes only and exit",
 )
-## expiry is need only when index is SENSEX or BANKEX
-args.add_argument(
-    "--expiry",
-    default=None,
-    help="Expiry date in YYMD format",
-)
+
 args = args.parse_args()
 
 
@@ -408,11 +403,10 @@ if __name__ == "__main__":
     index = args.index
     quantity = args.qty
     exchange = EXCHANGE[index]
-    expiry = args.expiry
     ## validate the quantity
     validate(quantity, index)
     api = ShoonyaApiPy()
-    strikes = get_staddle_strike(api, index, expiry)
+    strikes = get_staddle_strike(api, index)
     premium_collected = strikes["ce_ltp"] + strikes["pe_ltp"]
     target_pnl = premium_collected * (args.target)
     stop_loss = premium_collected * (args.sl_factor - 1)
