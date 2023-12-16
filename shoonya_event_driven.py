@@ -95,7 +95,7 @@ def main(args):
 
     evt_engine = EventEngine(api, target_mtm)
 
-    def place_order(cbk_args):
+    def place_short_straddle(cbk_args):
         response = api.place_order(**cbk_args)
         evt_engine.add_existing_orders(response["norenordno"])
 
@@ -174,7 +174,7 @@ def main(args):
         trigger = sl_ltp - 0.5
         code_sl = f"{strikes_data[f'{item}_sl_code']}"
         evt_engine.register(
-            place_order,
+            place_short_straddle,
             {
                 "buy_or_sell": "S",
                 "product_type": "M",
