@@ -96,12 +96,15 @@ def main(args):
     evt_engine = EventEngine(api, target_mtm)
 
     def place_short_straddle(cbk_args):
+        """
+        Executes for placing a straddle leg - very first step
+        """
         response = api.place_order(**cbk_args)
         evt_engine.add_existing_orders(response["norenordno"])
 
-    def on_complete(cbk_args):
+    def on_straddle_leg_complete(cbk_args):
         """
-        On complete
+        Executes when a straddle leg is completed/filled
         """
         response = api.place_order(
             buy_or_sell=cbk_args["buy_or_sell"],
@@ -138,7 +141,7 @@ def main(args):
 
     def stop_loss_executed(cbk_args):
         """
-        On stop_loss executed complete
+        Executes when stop loss, an OTM leg gets executed
         """
         code = cbk_args["code"]
         evt_engine.subscribe([code])
@@ -189,7 +192,7 @@ def main(args):
                 "remarks": subscribe_msg,
             },
             subscribe_msg,
-            on_complete,
+            on_straddle_leg_complete,
             {
                 "buy_or_sell": "B",
                 "product_type": "M",
