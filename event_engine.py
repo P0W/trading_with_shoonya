@@ -18,11 +18,12 @@ class EventEngine:
     """
 
     ## pylint: disable=too-many-arguments
-    def __init__(self, api_object, target):
+    def __init__(self, api_object, target, pnl_display_interval):
         self.opened = False
         self.running = False
         self.api = api_object
         self.target = target
+        self.pnl_display_interval = pnl_display_interval
 
         self.subscribed_symbols = set()
         self.tick_data = {}
@@ -33,6 +34,7 @@ class EventEngine:
         self.existing_orders = []
         self.in_position = False
         self.logger = logging.getLogger("event_engine")
+        self._last_displayed_time = None
 
     def _get_pnl(self, symbol, ltp):
         """
@@ -69,12 +71,20 @@ class EventEngine:
                     tradingsymbol = self.symbols_init_data[symbol]["tradingsymbol"]
                     msg[tradingsymbol] = f"{pnl:.2f}"
                 total_pnl = sum(self.tick_data.values())
-                msg["total"] = f"{total_pnl:.2f}"
-                self.logger.info(
-                    "PNL: %s | Target %.2f",
-                    json.dumps(msg, indent=2),
-                    self.target,
-                )
+                msg["Total"] = f"{total_pnl:.2f}"
+                ## Display pnl after every self.pnl_display_interval seconds
+                now = datetime.datetime.now()
+                if (
+                    self._last_displayed_time is None
+                    or (now - self._last_displayed_time).seconds
+                    >= self.pnl_display_interval
+                ):
+                    self.logger.info(
+                        "PNL: %s | Target %.2f",
+                        json.dumps(msg, indent=2),
+                        self.target,
+                    )
+                    self._last_displayed_time = now
                 self.running = self._monitor_function(total_pnl)
         except Exception as ex:  ## pylint: disable=broad-except
             self.logger.error("Exception in feed update: %s", ex)
@@ -214,6 +224,10 @@ class EventEngine:
         self.api.subscribe(symbols_list)
         ## add to the list of subscribed symbols
         self.subscribed_symbols.update(symbols_list)
+        self.logger.debug(
+            "Current subscribed_symbols: %s",
+            self.subscribed_symbols,
+        )
 
     def unsubscribe(self, symbols_list):
         """
@@ -225,12 +239,10 @@ class EventEngine:
             if symbol in self.subscribed_symbols:
                 self.logger.info("Unsubscribed from %s", symbol)
                 self.subscribed_symbols.remove(symbol)
-
-    def is_empty(self):
-        """
-        Is empty
-        """
-        return len(self.subscribed_symbols) == 0
+        self.logger.debug(
+            "Current subscribed_symbols: %s",
+            self.subscribed_symbols,
+        )
 
     def day_over(self):
         """
@@ -349,9 +361,17 @@ class EventEngine:
             "tradingsymbol": tradingsymbol,
         }
         self.in_position = True
+        self.logger.debug(
+            "Current symbols_init_data: %s",
+            json.dumps(self.symbols_init_data, indent=2),
+        )
 
     def add_existing_orders(self, norenordno):
         """
         Add existing orders
         """
         self.existing_orders.append(norenordno)
+        self.logger.debug(
+            "Current existing_orders: %s",
+            json.dumps(self.existing_orders, indent=2),
+        )

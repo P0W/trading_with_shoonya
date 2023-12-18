@@ -57,6 +57,12 @@ def parse_args():
         default=False,
         help="Show strikes only and exit",
     )
+    args.add_argument(
+        "--pnl-display-interval",
+        default=15,
+        type=int,
+        help="PnL display interval in seconds",
+    )
 
     return args.parse_args()
 
@@ -75,6 +81,7 @@ def main(args):
     sl_factor = args.sl_factor
     target = args.target
     index = args.index
+    pnl_display_interval = args.pnl_display_interval
 
     ## validate the quantity
     validate(qty, index)
@@ -91,7 +98,7 @@ def main(args):
         target_mtm,
     )
 
-    evt_engine = EventEngine(api, target_mtm)
+    evt_engine = EventEngine(api, target_mtm, pnl_display_interval)
 
     def place_short_straddle(cbk_args):
         """
@@ -129,14 +136,14 @@ def main(args):
 
         ## The tradingsymbol,fillshares,flprc,buy_or_sell,norenordno
         ## are of the placed aka straddle leg
-        tradingsymbol = cbk_args["tradingsymbol"]
+        tsym = cbk_args["tsym"]
         fillshares = int(cbk_args["fillshares"])
         flprc = float(cbk_args["flprc"])
         buy_or_sell = cbk_args["trantype"]
         norenordno = cbk_args["norenordno"]
 
         ## Subscribe to the straddle leg to get the pnl updates
-        exchange = get_exchange(tradingsymbol)
+        exchange = get_exchange(tsym)
         evt_engine.subscribe([f"{exchange}|{code}"])
 
         ## Now add the straddle leg to the event engine which is placed
@@ -148,7 +155,7 @@ def main(args):
             avg_price=flprc,
             buy_or_sell=buy_or_sell,
             norenordno=norenordno,
-            tradingsymbol=tradingsymbol,
+            tradingsymbol=tsym,
         )
         ## We'd need the response to get the order number of the stop loss order
         ## to cancel it when the target is hit
@@ -169,7 +176,7 @@ def main(args):
         flprc = float(cbk_args["flprc"])
         buy_or_sell = cbk_args["trantype"]
         norenordno = cbk_args["norenordno"]
-        tradingsymbol = cbk_args["tsym"]
+        tsym = cbk_args["tsym"]
 
         evt_engine.add_symbol_init_data(
             symbol_code=code,
@@ -177,7 +184,7 @@ def main(args):
             avg_price=flprc,
             buy_or_sell=buy_or_sell,
             norenordno=norenordno,
-            tradingsymbol=tradingsymbol,
+            tradingsymbol=tsym,
         )
 
     if args.show_strikes:
