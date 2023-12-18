@@ -104,27 +104,44 @@ def main(args):
         """
         Executes when a straddle leg is completed/filled
         """
+        ## cbk_args is the callback arguments passed from the event
+        ## engine when the order is completed and filled
+        ## Place a stop loss order on OTM leg from user_data
+
+        user_data = cbk_args["user_data"]
+        ## code/token of the straddle leg is not send in the callback args,
+        ## get from user_data
+        code = user_data["code"]
+
         response = api.place_order(
-            buy_or_sell=cbk_args["buy_or_sell"],
-            product_type=cbk_args["product_type"],
-            exchange=cbk_args["exchange"],
-            tradingsymbol=cbk_args["tradingsymbol"],
-            quantity=cbk_args["quantity"],
-            discloseqty=cbk_args["discloseqty"],
-            price_type=cbk_args["price_type"],
-            price=cbk_args["price"],
-            trigger_price=cbk_args["trigger_price"],
-            retention=cbk_args["retention"],
-            remarks=cbk_args["remarks"],
+            buy_or_sell=user_data["buy_or_sell"],
+            product_type=user_data["product_type"],
+            exchange=user_data["exchange"],
+            tradingsymbol=user_data["tradingsymbol"],
+            quantity=user_data["quantity"],
+            discloseqty=user_data["discloseqty"],
+            price_type=user_data["price_type"],
+            price=user_data["price"],
+            trigger_price=user_data["trigger_price"],
+            retention=user_data["retention"],
+            remarks=user_data["remarks"],
         )
+
+        ## The tradingsymbol,fillshares,flprc,buy_or_sell,norenordno
+        ## are of the placed aka straddle leg
         tradingsymbol = cbk_args["tradingsymbol"]
         fillshares = int(cbk_args["fillshares"])
         flprc = float(cbk_args["flprc"])
         buy_or_sell = cbk_args["trantype"]
-        code = cbk_args["code"]
         norenordno = cbk_args["norenordno"]
+
+        ## Subscribe to the straddle leg to get the pnl updates
         exchange = get_exchange(tradingsymbol)
         evt_engine.subscribe([f"{exchange}|{code}"])
+
+        ## Now add the straddle leg to the event engine which is placed
+        ## This is required to track pnl and squaring off the position
+
         evt_engine.add_symbol_init_data(
             symbol_code=code,
             qty=fillshares,
@@ -141,15 +158,19 @@ def main(args):
         """
         Executes when stop loss, an OTM leg gets executed
         """
-        code = cbk_args["code"]
-        evt_engine.subscribe([code])
+        ## code/token of the straddle leg is not send in the callback args,
+        ## get from user_data
+        user_data = cbk_args["user_data"]
+        code = user_data["code"]
+        instrument = user_data["instrument"]
+        evt_engine.subscribe([instrument])
+
         fillshares = int(cbk_args["fillshares"])
         flprc = float(cbk_args["flprc"])
-        instrument = cbk_args["instrument"]
         buy_or_sell = cbk_args["trantype"]
         norenordno = cbk_args["norenordno"]
         tradingsymbol = cbk_args["tsym"]
-        evt_engine.subscribe([instrument])
+
         evt_engine.add_symbol_init_data(
             symbol_code=code,
             qty=fillshares,

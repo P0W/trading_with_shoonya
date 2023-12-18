@@ -184,7 +184,7 @@ class EventEngine:
                         json.dumps(on_complete_method_args, indent=2),
                     )
                     ## put the order data in the new args as keys
-                    order_data.update(on_complete_method_args)
+                    order_data["user_data"] = on_complete_method_args
                     self.logger.debug(
                         "Calling %s with %s",
                         on_complete_method,
@@ -331,13 +331,15 @@ class EventEngine:
         """
         Add symbol init data
         """
+        ## pylint: disable=line-too-long
         self.logger.debug(
-            "Adding symbol=%s, qty=%s, avg_price=%s, buy_or_sell=%s, norenordno=%s",
+            "Adding symbol=%s, qty=%s, avg_price=%s, buy_or_sell=%s, norenordno=%s, tradingsymbol=%s",
             symbol_code,
             qty,
             avg_price,
             buy_or_sell,
             norenordno,
+            tradingsymbol,
         )
         self.symbols_init_data[symbol_code] = {
             "qty": qty,
