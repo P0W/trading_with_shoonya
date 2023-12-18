@@ -64,13 +64,16 @@ class EventEngine:
                 lp = float(tick_data["lp"])
                 tk = tick_data["tk"]
                 self.tick_data[tk] = self._get_pnl(tk, lp)
-                msg = ""
+                msg = {}
                 for symbol, pnl in self.tick_data.items():
                     tradingsymbol = self.symbols_init_data[symbol]["tradingsymbol"]
-                    msg += f"{tradingsymbol}={pnl:.2f} "
+                    msg[tradingsymbol] = f"{pnl:.2f}"
                 total_pnl = sum(self.tick_data.values())
+                msg["total"] = f"{total_pnl:.2f}"
                 self.logger.info(
-                    "PNL: %s | Total: %.2f | Target %.2f", msg, total_pnl, self.target
+                    "PNL: %s | Target %.2f",
+                    json.dumps(msg, indent=2),
+                    self.target,
                 )
                 self.running = self._monitor_function(total_pnl)
         except Exception as ex:  ## pylint: disable=broad-except

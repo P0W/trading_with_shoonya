@@ -15,6 +15,7 @@ class ShoonyaApiPy(NorenApi):
     """
 
     def __init__(self, force_login=False):
+        self.logger = logging.getLogger(__name__)
         NorenApi.__init__(
             self,
             host="https://api.shoonya.com/NorenWClientTP/",
@@ -35,11 +36,11 @@ class ShoonyaApiPy(NorenApi):
                 with open("cred.yml", encoding="utf-8") as f:
                     cred = yaml.load(f, Loader=yaml.FullLoader)
                     self.set_session(cred["user"], cred["pwd"], access_token)
-                logging.debug("Access token found in cache, logging in")
+                self.logger.debug("Access token found in cache, logging in")
             else:
                 raise ValueError("No access token found")
         except Exception as ex:  ## pylint: disable=broad-except
-            logging.debug("No access token found in cache, logging in: %s", ex)
+            self.logger.debug("No access token found in cache, logging in: %s", ex)
             with open("cred.yml", encoding="utf-8") as f:
                 cred = yaml.load(f, Loader=yaml.FullLoader)
 

@@ -91,8 +91,6 @@ def main(args):
         target_mtm,
     )
 
-    target_mtm = 101.0  ## REMOVE THIS
-
     evt_engine = EventEngine(api, target_mtm)
 
     def place_short_straddle(cbk_args):
