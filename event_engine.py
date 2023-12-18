@@ -66,7 +66,8 @@ class EventEngine:
                 self.tick_data[tk] = self._get_pnl(tk, lp)
                 msg = ""
                 for symbol, pnl in self.tick_data.items():
-                    msg += f"{self.existing_orders[symbol]}={pnl:.2f} "
+                    tradingsymbol = self.existing_orders[symbol]["tradingsymbol"]
+                    msg += f"{tradingsymbol}={pnl:.2f} "
                 total_pnl = sum(self.tick_data.values())
                 self.logger.info(
                     "PNL: %s | Total: %.2f | Target %.2f", msg, total_pnl, self.target
