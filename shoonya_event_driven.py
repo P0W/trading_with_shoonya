@@ -140,12 +140,12 @@ def main(args):
         """
         On stop_loss executed complete
         """
-        evt_engine.subscribe([cbk_args["tsym"]])
+        code = cbk_args["code"]
+        evt_engine.subscribe([code])
         fillshares = int(cbk_args["fillshares"])
         flprc = float(cbk_args["flprc"])
         instrument = cbk_args["instrument"]
         buy_or_sell = cbk_args["trantype"]
-        code = cbk_args["code"]
         norenordno = cbk_args["norenordno"]
         tradingsymbol = cbk_args["tsym"]
         evt_engine.subscribe([instrument])
