@@ -9,6 +9,7 @@ import time
 
 from utils import full_stack
 from utils import get_exchange
+from utils import round_to_point5
 
 
 ## pylint: disable=too-many-instance-attributes
@@ -65,42 +66,40 @@ class EventEngine:
             if "lp" in tick_data and self.in_position:
                 lp = float(tick_data["lp"])
                 tk = tick_data["tk"]
-                self.tick_data[tk] = self._get_pnl(tk, lp)
-                msg = {}
-                for symbol, pnl in self.tick_data.items():
-                    tradingsymbol = self.symbols_init_data[symbol]["tradingsymbol"]
-                    msg[tradingsymbol] = f"{pnl:.2f}"
-                total_pnl = sum(self.tick_data.values())
-                msg["Total"] = f"{total_pnl:.2f}"
-                ## Display pnl after every self.pnl_display_interval seconds
-                now = datetime.datetime.now()
-                if (
-                    self._last_displayed_time is None
-                    or (now - self._last_displayed_time).seconds
-                    >= self.pnl_display_interval
-                ):
-                    self.logger.info(
-                        "PNL: %s | Target %.2f",
-                        json.dumps(msg, indent=2),
-                        self.target,
-                    )
-                    self._last_displayed_time = now
-                self.running = self._monitor_function(total_pnl)
+                self.tick_data[tk] = {"pnl": self._get_pnl(tk, lp), "lp": lp}
+                self.running = self._monitor_function()
         except Exception as ex:  ## pylint: disable=broad-except
             self.logger.error("Exception in feed update: %s", ex)
             ## stacktrace
             self.logger.error(full_stack())
             sys.exit(-1)
 
-    def _monitor_function(self, pnl):
+    def _get_displayed_pnl(self):
+        """
+        Get displayed pnl
+        """
+        pnl_data = {}
+        total_pnl = 0
+        for symbol, data in self.tick_data.items():
+            tradingsymbol = self.symbols_init_data[symbol]["tradingsymbol"]
+            pnl_data[tradingsymbol] = f"{data['pnl']:.2f}"
+            total_pnl += data["pnl"]
+        pnl_data["Total"] = f"{total_pnl:.2f}"
+        pnl_data["Target"] = f"{self.target:.2f}"
+        return pnl_data
+
+    ## pylint: disable=too-many-locals
+    def _monitor_function(self):
         """
         Monitor pnl
         """
         continue_running = True
+        pnl_data = self._get_displayed_pnl()
+        pnl = float(pnl_data["Total"])
         if pnl > self.target:
             self.logger.info("Target Achieved | PNL > %.2f | exiting", self.target)
-            ret = self.api.get_order_book()
-            for order in ret:
+            order_book_response = self.api.get_order_book()
+            for order in order_book_response:
                 if order["status"] != "COMPLETE":
                     continue
                 norenordno = order["norenordno"]
@@ -109,36 +108,58 @@ class EventEngine:
                     exchange_code = get_exchange(symbol)
                     qty = order["fillshares"]
                     buy_or_sell = order["trantype"]
+                    remarks = order["remarks"]
+                    opposite_buy_or_sell = "B" if buy_or_sell == "S" else "S"
                     ## get code from self.symbols_init_data
                     for code, data in self.symbols_init_data.items():
                         if data["norenordno"] == norenordno:
                             symbol_code = code
                             break
-                    opposite_buy_or_sell = "B" if buy_or_sell == "S" else "S"
                     self.logger.info("Unsubscribing from %s", symbol_code)
                     self.unsubscribe(f"{exchange_code}|{symbol_code}")
-                    self.logger.info("Exiting Leg %s", order["remarks"])
-                    self.logger.info("Placing exit order for %s", order["tsym"])
+                    self.logger.info("Exiting Leg %s | %s", remarks, symbol)
+
+                    ## square_off_price slight above ltp for buy and below for sell
+                    self.logger.debug("tick_data: %s", self.tick_data)
+                    ltp = self.tick_data[symbol_code]["lp"]
+                    square_off_price = ltp
+                    if ltp > 0.5:
+                        square_off_price = round_to_point5(ltp)
+                        square_off_price = (
+                            ltp + 0.5 if buy_or_sell == "B" else ltp - 0.5
+                        )
                     self.register(
                         lambda args: self.api.place_order(**args),
                         {
                             "buy_or_sell": opposite_buy_or_sell,
-                            "product_type": "M",
+                            "product_type": "M",  ## NRML
                             "exchange": exchange_code,
-                            "tradingsymbol": order["tsym"],
+                            "tradingsymbol": symbol,
                             "quantity": qty,
                             "discloseqty": 0,
-                            "price_type": "MKT",
-                            "price": 0,  ## market order
+                            "price_type": "LMT",
+                            "price": square_off_price,
                             "trigger_price": None,
                             "retention": "DAY",
-                            "remarks": f"{order['remarks']}_exit",
+                            "remarks": f"{remarks}_exit",
                         },
-                        f"{order['remarks']}_exit",
+                        f"{remarks}_exit",
                         self._exit_complete,
                         {},
                     )
             continue_running = False
+        else:
+            now = datetime.datetime.now()
+            if (
+                self._last_displayed_time is None
+                or (not continue_running)
+                or (now - self._last_displayed_time).seconds
+                >= self.pnl_display_interval
+            ):
+                self.logger.info(
+                    "PNL: %s | Target: %s", json.dumps(pnl_data, indent=2), self.target
+                )
+                self._last_displayed_time = now
         return continue_running
 
     def _exit_complete(self, _args):

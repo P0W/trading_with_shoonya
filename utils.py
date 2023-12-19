@@ -195,7 +195,7 @@ def get_exchange(tradingsymbol, is_index=False):
     return EXCHANGE[get_index(tradingsymbol)]
 
 
-def get_strike(df, expiry_date, nearest, ctype):
+def get_strike_tsym(df, expiry_date, nearest, ctype):
     """
     Get the strike name from the trading symbol
     """
@@ -206,6 +206,14 @@ def get_strike(df, expiry_date, nearest, ctype):
     ]
     ## get the TradingSymbol
     return df["TradingSymbol"].values[0]
+
+
+def get_strike(df, tsym):
+    """
+    Get the strike price from the trading symbol
+    """
+    df = df[df["TradingSymbol"] == tsym]
+    return df["StrikePrice"].values[0]
 
 
 def get_closest_expiry(symbol_index):
@@ -241,8 +249,8 @@ def get_staddle_strike(shoonya_api, symbol_index):
             round(ltp / INDICES_ROUNDING[symbol_index]) * INDICES_ROUNDING[symbol_index]
         )
         logger.info("LTP %.2f | Nearest %.2f", ltp, nearest)
-        ce_strike = get_strike(df, expiry_date, nearest, "CE")
-        pe_strike = get_strike(df, expiry_date, nearest, "PE")
+        ce_strike = get_strike_tsym(df, expiry_date, nearest, "CE")
+        pe_strike = get_strike_tsym(df, expiry_date, nearest, "PE")
         logger.info("CE Strike %s | PE Strike %s", ce_strike, pe_strike)
         ## find the token for the strike
         ce_token = df[df["TradingSymbol"] == ce_strike]["Token"].values[0]
@@ -265,8 +273,8 @@ def get_staddle_strike(shoonya_api, symbol_index):
             * INDICES_ROUNDING[symbol_index]
         )
         logger.debug("CE SL %.2f | PE SL %.2f", ce_sl, pe_sl)
-        ce_sl_strike = get_strike(df, expiry_date, ce_sl, "CE")
-        pe_sl_strike = get_strike(df, expiry_date, pe_sl, "PE")
+        ce_sl_strike = get_strike_tsym(df, expiry_date, ce_sl, "CE")
+        pe_sl_strike = get_strike_tsym(df, expiry_date, pe_sl, "PE")
         logger.info("CE SL Strike %s | PE SL Strike %s", ce_sl_strike, pe_sl_strike)
         ## find the token for the strike
         ce_sl_token = df[df["TradingSymbol"] == ce_sl_strike]["Token"].values[0]
@@ -282,6 +290,11 @@ def get_staddle_strike(shoonya_api, symbol_index):
         if ce_sl_token == ce_token or pe_sl_token == pe_token:
             logger.error("Cannot do the iron fly strategy, exiting!")
             sys.exit(-1)
+        ## Get the max difference between the two strikes ce_strike, ce_sl_strike and pe_strike, pe_sl_strike
+        max_strike_diff = max(
+            abs(get_strike(df, ce_strike) - get_strike(df, ce_sl_strike)),
+            abs(get_strike(df, pe_strike) - get_strike(df, pe_sl_strike)),
+        )
         return {
             "ce_code": str(ce_token),
             "pe_code": str(pe_token),
@@ -295,8 +308,20 @@ def get_staddle_strike(shoonya_api, symbol_index):
             "pe_sl_strike": pe_sl_strike,
             "ce_sl_ltp": ce_sl_ltp,
             "pe_sl_ltp": pe_sl_ltp,
+            "max_strike_diff": max_strike_diff,
         }
     return None
 
 
+def disable_module_logger(module_name, level=logging.CRITICAL):
+    """
+    Disable the module logger
+    """
+    logging.getLogger(module_name).setLevel(level)
+
+
 refresh_indices_code()
+disable_module_logger("urllib3", logging.CRITICAL)
+disable_module_logger("urllib3.connectionpool", logging.CRITICAL)
+## disable websocket logger
+disable_module_logger("websocket", logging.ERROR)

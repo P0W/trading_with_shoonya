@@ -89,12 +89,19 @@ def main(args):
     strikes_data = get_staddle_strike(api, index)
 
     premium = args.qty * (float(strikes_data["ce_ltp"]) + float(strikes_data["pe_ltp"]))
+    premium_lost = (
+        args.qty
+        * args.sl_factor
+        * (float(strikes_data["ce_sl_ltp"]) + float(strikes_data["pe_sl_ltp"]))
+    )
+    max_loss = strikes_data["max_strike_diff"] * args.qty + (premium - premium_lost)
     target_mtm = premium * target
 
     logging.info(
-        "Strikes data: %s | Max profit :%.2f | Target : %.2f",
+        "Strikes data: %s | Max profit :%.2f | Max Loss : %.2f | Target : %.2f",
         json.dumps(strikes_data, indent=2),
         premium,
+        max_loss,
         target_mtm,
     )
 
@@ -206,7 +213,7 @@ def main(args):
             place_short_straddle,
             {
                 "buy_or_sell": "S",
-                "product_type": "M",
+                "product_type": "M",  ## NRML
                 "exchange": get_exchange(symbol),
                 "tradingsymbol": symbol,
                 "quantity": qty,
@@ -221,7 +228,7 @@ def main(args):
             on_straddle_leg_complete,
             {
                 "buy_or_sell": "B",
-                "product_type": "M",
+                "product_type": "M",  ## NRML
                 "exchange": get_exchange(sl_symbol),
                 "tradingsymbol": sl_symbol,
                 "quantity": qty,
