@@ -325,3 +325,5 @@ disable_module_logger("urllib3", logging.CRITICAL)
 disable_module_logger("urllib3.connectionpool", logging.CRITICAL)
 ## disable websocket logger
 disable_module_logger("websocket", logging.ERROR)
+## disable NorenApi logger
+disable_module_logger("NorenRestApiPy.NorenApi", logging.ERROR)

@@ -63,6 +63,15 @@ def parse_args():
         type=int,
         help="PnL display interval in seconds",
     )
+    args.add_argument(
+        "--target-mtm",
+        default=-1,
+        type=float,
+        help="Target MTM profit",
+    )
+    args.add_argument(
+        "--book-profit", default=0.2, type=float, help="Book profit % of premium left"
+    )
 
     return args.parse_args()
 
@@ -72,15 +81,18 @@ def main(args):
     """
     Main
     """
-    logging = configure_logger(args.log_level, "shoonya_evt_driven")
-
-    logging.debug("Input Arguments: %s", json.dumps(vars(args), indent=2))
-
-    api = ShoonyaApiPy()
     qty = args.qty
     sl_factor = args.sl_factor
     target = args.target
     index = args.index
+    show_strikes = args.show_strikes
+    target_mtm = args.target_mtm
+    book_profit = args.book_profit
+
+    logging = configure_logger(args.log_level, f"shoonya_evt_driven_{index}")
+    logging.debug("Input Arguments: %s", json.dumps(vars(args), indent=2))
+
+    api = ShoonyaApiPy()
     pnl_display_interval = args.pnl_display_interval
 
     ## validate the quantity
@@ -88,14 +100,20 @@ def main(args):
 
     strikes_data = get_staddle_strike(api, index)
 
-    premium = args.qty * (float(strikes_data["ce_ltp"]) + float(strikes_data["pe_ltp"]))
+    premium = qty * (float(strikes_data["ce_ltp"]) + float(strikes_data["pe_ltp"]))
     premium_lost = (
-        args.qty
-        * args.sl_factor
+        qty
+        * sl_factor
         * (float(strikes_data["ce_sl_ltp"]) + float(strikes_data["pe_sl_ltp"]))
     )
-    max_loss = strikes_data["max_strike_diff"] * args.qty + (premium - premium_lost)
-    target_mtm = premium * target
+    max_loss = strikes_data["max_strike_diff"] * qty + (premium - premium_lost)
+    if target_mtm == -1:
+        logging.info("Target MTM not provided, calculating from premium")
+        target_mtm = premium * target
+    else:
+        logging.info(
+            "Target MTM provided, ignoring target %.2f %% of premium", target * 100.0
+        )
 
     logging.info(
         "Strikes data: %s | Max profit :%.2f | Max Loss : %.2f | Target : %.2f",
@@ -151,7 +169,7 @@ def main(args):
 
         ## Subscribe to the straddle leg to get the pnl updates
         exchange = get_exchange(tsym)
-        evt_engine.subscribe([f"{exchange}|{code}"])
+        evt_engine.subscribe(f"{exchange}|{code}")
 
         ## Now add the straddle leg to the event engine which is placed
         ## This is required to track pnl and squaring off the position
@@ -168,6 +186,11 @@ def main(args):
         ## to cancel it when the target is hit
         evt_engine.add_existing_orders(response["norenordno"])
 
+        ## Place a book profit order
+        logging.info("Placing book profit order")
+        response = api.place_order(**user_data["book_profit_order"])
+        evt_engine.add_existing_orders(response["norenordno"])
+
     def stop_loss_executed(cbk_args):
         """
         Executes when stop loss, an OTM leg gets executed
@@ -177,7 +200,7 @@ def main(args):
         user_data = cbk_args["user_data"]
         code = user_data["code"]
         instrument = user_data["instrument"]
-        evt_engine.subscribe([instrument])
+        evt_engine.subscribe(instrument)
 
         fillshares = int(cbk_args["fillshares"])
         flprc = float(cbk_args["flprc"])
@@ -194,7 +217,23 @@ def main(args):
             tradingsymbol=tsym,
         )
 
-    if args.show_strikes:
+    def book_profit_executed(cbk_args):
+        """
+        Executes when book profit order, an ITM leg gets executed
+        """
+        ## code/token of the straddle leg is not send in the callback args,
+        ## get from user_data
+        user_data = cbk_args["user_data"]
+        instrument = user_data["instrument"]
+        evt_engine.unsubscribe(instrument)
+
+        ## get all pending orders and cancel them
+        remark = user_data["remarks"]
+        ## stripoff _book_profit from the remark and add _stop_loss
+        remark = remark.replace("_book_profit", "_stop_loss")
+        evt_engine.cancel_all_orders(remark)
+
+    if show_strikes:
         sys.exit(0)
 
     for item in ["ce", "pe"]:
@@ -208,6 +247,7 @@ def main(args):
         sl_ltp = float(strikes_data[f"{item}_sl_ltp"])
         sl_ltp = round_to_point5(sl_ltp * sl_factor)
         trigger = sl_ltp - 0.5
+        book_profit_ltp = round_to_point5(ltp * book_profit)  ## 20% of premium left
         code_sl = f"{strikes_data[f'{item}_sl_code']}"
         evt_engine.register(
             place_short_straddle,
@@ -239,6 +279,19 @@ def main(args):
                 "retention": "DAY",
                 "remarks": f"{subscribe_msg}_stop_loss",
                 "code": code,
+                "book_profit_order": {
+                    "buy_or_sell": "B",
+                    "product_type": "M",  ## NRML
+                    "exchange": get_exchange(symbol),
+                    "tradingsymbol": symbol,
+                    "quantity": qty,
+                    "discloseqty": 0,
+                    "price_type": "LMT",
+                    "price": book_profit_ltp,
+                    "trigger_price": None,
+                    "retention": "DAY",
+                    "remarks": f"{subscribe_msg}_book_profit",
+                },
             },
         )
 
@@ -246,6 +299,12 @@ def main(args):
             f"{subscribe_msg}_stop_loss",
             stop_loss_executed,
             {"instrument": f"{get_exchange(sl_symbol)}|{code_sl}", "code": code_sl},
+        )
+
+        evt_engine.evt_register(
+            f"{subscribe_msg}_book_profit",
+            book_profit_executed,
+            {"instrument": f"{get_exchange(symbol)}|{code}"},
         )
 
     evt_engine.start()

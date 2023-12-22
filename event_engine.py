@@ -82,7 +82,11 @@ class EventEngine:
         total_pnl = 0
         for symbol, data in self.tick_data.items():
             tradingsymbol = self.symbols_init_data[symbol]["tradingsymbol"]
-            pnl_data[tradingsymbol] = f"{data['pnl']:.2f}"
+            buy_or_sell = self.symbols_init_data[symbol]["buy_or_sell"]
+            qty = self.symbols_init_data[symbol]["qty"]
+            sign = "+" if buy_or_sell == "B" else "-"
+            key = f"{sign}{qty} x {tradingsymbol}"
+            pnl_data[key] = {"mtm": f"{data['pnl']:.2f}", "ltp": f"{data['lp']:.2f}"}
             total_pnl += data["pnl"]
         pnl_data["Total"] = f"{total_pnl:.2f}"
         pnl_data["Target"] = f"{self.target:.2f}"
@@ -103,6 +107,9 @@ class EventEngine:
                 if order["status"] != "COMPLETE":
                     continue
                 norenordno = order["norenordno"]
+                ## Need to make sure we close only the orders we
+                ## opened with current running instance
+                ## This will enable us to run multiple instances of the same script
                 if norenordno in self.existing_orders and ("remarks" in order):
                     symbol = order["tsym"]
                     exchange_code = get_exchange(symbol)
@@ -156,13 +163,11 @@ class EventEngine:
                 or (now - self._last_displayed_time).seconds
                 >= self.pnl_display_interval
             ):
-                self.logger.info(
-                    "PNL: %s | Target: %s", json.dumps(pnl_data, indent=2), self.target
-                )
+                self.logger.info("PNL: %s", json.dumps(pnl_data, indent=1))
                 self._last_displayed_time = now
         return continue_running
 
-    def _exit_complete(self, _args):
+    def _exit_complete(self, order_remark=None):
         """
         Cancel pending orders
         """
@@ -171,12 +176,18 @@ class EventEngine:
             if order["status"] == "TRIGGER_PENDING":
                 norenordno = order["norenordno"]
                 if norenordno in self.existing_orders and ("remarks" in order):
-                    self.logger.info("Cancelling pending stop loss orders")
-                    response = self.api.cancel_order(norenordno)
-                    self.logger.info(
-                        "Response cancel order %s",
-                        json.dumps(response, indent=2),
-                    )
+                    if not order_remark or order["remarks"] == order_remark:
+                        if order_remark:
+                            self.logger.info(
+                                "Cancelling pending order %s", order_remark
+                            )
+                        else:
+                            self.logger.info("Cancelling pending stop loss orders")
+                        response = self.api.cancel_order(norenordno)
+                        self.logger.info(
+                            "Response cancel order %s",
+                            json.dumps(response, indent=2),
+                        )
 
     def _open_callback(self):
         """
@@ -189,7 +200,8 @@ class EventEngine:
                 self.logger.info(
                     "Resubscribing to %s", json.dumps(self.subscribed_symbols, indent=2)
                 )
-                self.api.subscribe(self.subscribed_symbols)
+                ## convert to list
+                self.api.subscribe(list(self.subscribed_symbols))
         else:
             self.logger.info("Websocket Opened")
         self.opened = True
@@ -204,7 +216,11 @@ class EventEngine:
                 and order_data["reporttype"] == "Fill"
             ):
                 message = order_data["remarks"]
-                if message in self.on_complete_methods:
+                norenordno = order_data["norenordno"]
+                if (
+                    message in self.on_complete_methods
+                    and norenordno in self.existing_orders
+                ):
                     self.logger.debug("Found %s in on_complete_methods", message)
                     (
                         on_complete_method,
@@ -241,6 +257,8 @@ class EventEngine:
         """
         Subscribe to symbols
         """
+        if isinstance(symbols_list, str):
+            symbols_list = [symbols_list]
         self.logger.info("Subscribing to %s", symbols_list)
         self.api.subscribe(symbols_list)
         ## add to the list of subscribed symbols
@@ -254,16 +272,24 @@ class EventEngine:
         """
         Unsubscribe from symbols
         """
+        if isinstance(symbols_list, str):
+            symbols_list = [symbols_list]
         for symbol in symbols_list:
-            self.api.unsubscribe(symbol)
             ## remove from the list of subscribed symbols
             if symbol in self.subscribed_symbols:
                 self.logger.info("Unsubscribed from %s", symbol)
                 self.subscribed_symbols.remove(symbol)
+        self.api.unsubscribe(symbols_list)
         self.logger.debug(
             "Current subscribed_symbols: %s",
             self.subscribed_symbols,
         )
+
+    def _all_unsubscribed(self):
+        """
+        All unsubscribed
+        """
+        return len(self.subscribed_symbols) == 0
 
     def day_over(self):
         """
@@ -295,7 +321,7 @@ class EventEngine:
         """
         Is running
         """
-        return self.running
+        return self.running and not self._all_unsubscribed()
 
     def stop(self):
         """
@@ -396,3 +422,9 @@ class EventEngine:
             "Current existing_orders: %s",
             json.dumps(self.existing_orders, indent=2),
         )
+
+    def cancel_all_orders(self, remark):
+        """
+        Cancel all orders with given remark
+        """
+        self._exit_complete(remark)
