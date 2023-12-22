@@ -40,13 +40,13 @@ def parse_args():
         "--sl_factor",
         default=1.30,
         type=float,
-        help="Stop loss factor | default 30%% on individual leg",
+        help="Stop loss factor | default 30 percent on individual leg",
     )
     args.add_argument(
         "--target",
         default=0.35,
         type=float,
-        help="Target profit | default 35%% of collected premium",
+        help="Target profit | default 35 percent of collected premium",
     )
     args.add_argument(
         "--log-level", default="DEBUG", help="Log level", choices=["INFO", "DEBUG"]
@@ -70,7 +70,10 @@ def parse_args():
         help="Target MTM profit",
     )
     args.add_argument(
-        "--book-profit", default=0.2, type=float, help="Book profit % of premium left"
+        "--book-profit",
+        default=0.2,
+        type=float,
+        help="Book profit percent of premium left",
     )
 
     return args.parse_args()
