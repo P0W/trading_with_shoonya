@@ -1,7 +1,6 @@
 """
     Event driven pub-sub trading strategy for iron fly short straddle
 """
-import argparse
 import json
 import sys
 import time
@@ -11,72 +10,9 @@ from event_engine import EventEngine
 from utils import configure_logger
 from utils import get_exchange
 from utils import get_staddle_strike
+from utils import parse_args
 from utils import round_to_point5
 from utils import validate
-
-
-def parse_args():
-    """
-    Parse the arguments
-    """
-    args = argparse.ArgumentParser(
-        description="Straddle orders for NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY and USDINR"
-    )
-    args.add_argument("--force", action="store_true", default=False, help="Force login")
-    args.add_argument(
-        "--index",
-        required=True,
-        choices=[
-            "NIFTY",
-            "BANKNIFTY",
-            "FINNIFTY",
-            "MIDCPNIFTY",
-            "SENSEX",
-            "BANKEX",
-        ],
-    )
-    args.add_argument("--qty", required=True, type=int, help="Quantity to trade")
-    args.add_argument(
-        "--sl_factor",
-        default=1.30,
-        type=float,
-        help="Stop loss factor | default 30 percent on individual leg",
-    )
-    args.add_argument(
-        "--target",
-        default=0.35,
-        type=float,
-        help="Target profit | default 35 percent of collected premium",
-    )
-    args.add_argument(
-        "--log-level", default="DEBUG", help="Log level", choices=["INFO", "DEBUG"]
-    )
-    args.add_argument(
-        "--show-strikes",
-        action="store_true",
-        default=False,
-        help="Show strikes only and exit",
-    )
-    args.add_argument(
-        "--pnl-display-interval",
-        default=15,
-        type=int,
-        help="PnL display interval in seconds",
-    )
-    args.add_argument(
-        "--target-mtm",
-        default=-1,
-        type=float,
-        help="Target MTM profit",
-    )
-    args.add_argument(
-        "--book-profit",
-        default=0.2,
-        type=float,
-        help="Book profit percent of premium left",
-    )
-
-    return args.parse_args()
 
 
 ## pylint: disable=too-many-locals,too-many-statements
@@ -231,7 +167,7 @@ def main(args):
         evt_engine.unsubscribe(instrument)
 
         ## get all pending orders and cancel them
-        remark = user_data["remarks"]
+        remark = cbk_args["remarks"]
         ## stripoff _book_profit from the remark and add _stop_loss
         remark = remark.replace("_book_profit", "_stop_loss")
         evt_engine.cancel_all_orders(remark)
@@ -311,9 +247,16 @@ def main(args):
         )
 
     evt_engine.start()
-    while evt_engine.is_running() and not evt_engine.day_over():
+    while True:
         ## Look for any registered events and process them, otherwise keep waiting
         evt_engine.run()
+        if not evt_engine.is_running():
+            logging.info("Event engine stopped")
+            break
+        if evt_engine.day_over():
+            logging.info("Day over, exiting")
+            break
+
     logging.info("Exiting")
     time.sleep(5)
     evt_engine.stop()

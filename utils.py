@@ -1,18 +1,20 @@
 """
 Utility functions for the project shoonya trading
 """
+import argparse
 import datetime
 import logging
 import os
 import pathlib
 import sys
+import time
 import traceback
 import zipfile
+from functools import wraps
 
 import colorlog
 import pandas as pd
 import requests
-
 from const import EXCHANGE
 from const import INDICES_ROUNDING
 from const import INDICES_TOKEN
@@ -313,12 +315,107 @@ def get_staddle_strike(shoonya_api, symbol_index):
     return None
 
 
+def parse_args():
+    """
+    Parse the arguments
+    """
+    args = argparse.ArgumentParser(
+        description="Straddle orders for NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY and USDINR"
+    )
+    args.add_argument("--force", action="store_true", default=False, help="Force login")
+    args.add_argument(
+        "--index",
+        required=True,
+        choices=[
+            "NIFTY",
+            "BANKNIFTY",
+            "FINNIFTY",
+            "MIDCPNIFTY",
+            "SENSEX",
+            "BANKEX",
+        ],
+    )
+    args.add_argument("--qty", required=True, type=int, help="Quantity to trade")
+    args.add_argument(
+        "--sl_factor",
+        default=1.30,
+        type=float,
+        help="Stop loss factor | default 30 percent on individual leg",
+    )
+    args.add_argument(
+        "--target",
+        default=0.35,
+        type=float,
+        help="Target profit | default 35 percent of collected premium",
+    )
+    args.add_argument(
+        "--log-level", default="DEBUG", help="Log level", choices=["INFO", "DEBUG"]
+    )
+    args.add_argument(
+        "--show-strikes",
+        action="store_true",
+        default=False,
+        help="Show strikes only and exit",
+    )
+    args.add_argument(
+        "--pnl-display-interval",
+        default=15,
+        type=int,
+        help="PnL display interval in seconds",
+    )
+    args.add_argument(
+        "--target-mtm",
+        default=-1,
+        type=float,
+        help="Target MTM profit",
+    )
+    args.add_argument(
+        "--book-profit",
+        default=0.2,
+        type=float,
+        help="Book profit percent of premium left",
+    )
+    args.add_argument(
+        "--cred-file",
+        default="cred.yml",
+        help="Credential file",
+    )
+
+    return args.parse_args()
+
+
 def disable_module_logger(module_name, level=logging.CRITICAL):
     """
     Disable the module logger
     """
     logging.getLogger(module_name).setLevel(level)
 
+## Create a decorator to invoke the function only if X seconds have passed
+## since the last invocation
+def delay_decorator(delay):
+    """Decorator that ensures function can't be called more often than delay seconds."""
+
+    def decorator(func):
+        # Store the time the function was last called
+        last_called = [0]
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Get the current time
+            now = time.time()
+
+            # If enough time has passed since the last call, call the function
+            if now - last_called[0] > delay:
+                result = func(*args, **kwargs)
+                # Update the time the function was last called
+                last_called[0] = now
+                return result
+            # If not enough time has passed, return None
+            return None
+
+        return wrapper
+
+    return decorator
 
 refresh_indices_code()
 disable_module_logger("urllib3", logging.CRITICAL)

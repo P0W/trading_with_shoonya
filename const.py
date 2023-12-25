@@ -2,6 +2,9 @@
 Constants for shoonya trading
 """
 
+import enum
+
+
 INDICES_TOKEN = {
     "NIFTY": "26000",
     "BANKNIFTY": "26009",
@@ -70,3 +73,22 @@ SCRIP_SYMBOL_NAME = {
     "GBPINR": "GBPINR",
     "JPYINR": "JPYINR",
 }
+
+
+## Enum for order status
+class OrderStatus(enum.Enum):
+    """
+    Enum for order status
+    """
+
+    OPEN = "OPEN"
+    COMPLETE = "COMPLETE"
+    CANCELED = "CANCELED"
+    REJECTED = "REJECTED"
+    TRIGGER_PENDING = "TRIGGER_PENDING"
+    PENDING = "PENDING"
+    INVALID_STATUS_TYPE = "INVALID_STATUS_TYPE"
+
+    ## tostring method
+    def __str__(self):
+        return self.value

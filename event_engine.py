@@ -92,11 +92,40 @@ class EventEngine:
         pnl_data["Target"] = f"{self.target:.2f}"
         return pnl_data
 
+    def _cancel_all_orders(self):
+        for norenordno in self.existing_orders:
+            res = self.api.single_order_history(norenordno)
+            for order in res:
+                if "exchordid" in order:
+                    if order["status"] in ["TRIGGER_PENDING", "OPEN"]:
+                        self.logger.info("Cancelling pending order %s", norenordno)
+                        remarks = order["remarks"]
+                        response = self.api.cancel_order(norenordno)
+                        self.logger.info(
+                            "Response cancel order %s",
+                            json.dumps(response, indent=2),
+                        )
+                        if remarks in self.on_complete_methods:
+                            self.logger.debug(
+                                "Removing %s from on_complete_methods", remarks
+                            )
+                            del self.on_complete_methods[remarks]
+
     ## pylint: disable=too-many-locals
     def _monitor_function(self):
         """
         Monitor pnl
         """
+
+        def exit_place_order(args):
+            """
+            Place order
+            """
+            self.logger.debug("Placing order %s", json.dumps(args, indent=2))
+            response = self.api.place_order(**args)
+            self.add_existing_orders(response["norenordno"])
+            return response
+
         continue_running = True
         pnl_data = self._get_displayed_pnl()
         pnl = float(pnl_data["Total"])
@@ -118,25 +147,41 @@ class EventEngine:
                     remarks = order["remarks"]
                     opposite_buy_or_sell = "B" if buy_or_sell == "S" else "S"
                     ## get code from self.symbols_init_data
+                    symbol_code = None
                     for code, data in self.symbols_init_data.items():
                         if data["norenordno"] == norenordno:
                             symbol_code = code
                             break
+                    if not symbol_code:
+                        self.logger.warning(
+                            "Symbol code not found for self.symbols_init_data: %s for %s",
+                            json.dumps(self.symbols_init_data, indent=2),
+                            norenordno,
+                        )
+                        continue
                     self.logger.info("Unsubscribing from %s", symbol_code)
                     self.unsubscribe(f"{exchange_code}|{symbol_code}")
                     self.logger.info("Exiting Leg %s | %s", remarks, symbol)
 
                     ## square_off_price slight above ltp for buy and below for sell
                     self.logger.debug("tick_data: %s", self.tick_data)
-                    ltp = self.tick_data[symbol_code]["lp"]
-                    square_off_price = ltp
-                    if ltp > 0.5:
-                        square_off_price = round_to_point5(ltp)
-                        square_off_price = (
-                            ltp + 0.5 if buy_or_sell == "B" else ltp - 0.5
+                    if symbol_code not in self.tick_data:
+                        self.logger.warning(
+                            "Symbol %s not found in tick_data %s, placing market order",
+                            symbol_code,
+                            json.dumps(self.tick_data, indent=2),
                         )
+                        square_off_price = 0.0
+                    else:
+                        ltp = self.tick_data[symbol_code]["lp"]
+                        square_off_price = ltp
+                        if ltp > 0.5:
+                            square_off_price = round_to_point5(ltp)
+                            square_off_price = (
+                                ltp + 0.5 if buy_or_sell == "B" else ltp - 0.5
+                            )
                     self.register(
-                        lambda args: self.api.place_order(**args),
+                        exit_place_order,
                         {
                             "buy_or_sell": opposite_buy_or_sell,
                             "product_type": "M",  ## NRML
@@ -144,16 +189,17 @@ class EventEngine:
                             "tradingsymbol": symbol,
                             "quantity": qty,
                             "discloseqty": 0,
-                            "price_type": "LMT",
-                            "price": square_off_price,
+                            "price_type": "MKT",  ## CHANGE TO LMT
+                            "price": 0.0,  ## FIXME: square_off_price,
                             "trigger_price": None,
                             "retention": "DAY",
                             "remarks": f"{remarks}_exit",
                         },
                         f"{remarks}_exit",
                         self._exit_complete,
-                        {},
+                        None,
                     )
+                    self._cancel_all_orders()
             continue_running = False
         else:
             now = datetime.datetime.now()
@@ -171,9 +217,10 @@ class EventEngine:
         """
         Cancel pending orders
         """
-        ret = self.api.get_order_book()
-        for order in ret:
-            if order["status"] == "TRIGGER_PENDING":
+        logging.debug("Cancelling pending orders")
+        order_book_response = self.api.get_order_book()
+        for order in order_book_response:
+            if (order["status"] == "TRIGGER_PENDING") or (order["status"] == "OPEN"):
                 norenordno = order["norenordno"]
                 if norenordno in self.existing_orders and ("remarks" in order):
                     if not order_remark or order["remarks"] == order_remark:
@@ -188,6 +235,17 @@ class EventEngine:
                             "Response cancel order %s",
                             json.dumps(response, indent=2),
                         )
+                else:
+                    self.logger.debug(
+                        "Not cancelling order: %s Current existing_orders: %s | order_remark: %s",
+                        json.dumps(order, indent=2),
+                        self.existing_orders,
+                        order_remark,
+                    )
+            else:
+                self.logger.debug(
+                    "Not matched. Not cancelling order: %s", json.dumps(order, indent=2)
+                )
 
     def _open_callback(self):
         """
@@ -214,21 +272,39 @@ class EventEngine:
             if (
                 order_data["status"] == "COMPLETE"
                 and order_data["reporttype"] == "Fill"
+            ) or (
+                order_data["status"] == "CANCELLED"
+                and order_data["reporttype"] == "Canceled"
             ):
                 message = order_data["remarks"]
                 norenordno = order_data["norenordno"]
+                logging.debug(
+                    "Is %s Present in on_complete_methods: %s",
+                    message,
+                    message in self.on_complete_methods,
+                )
+                logging.debug(
+                    "Is %s Present in existing_orders: %s",
+                    message,
+                    norenordno in self.existing_orders,
+                )
                 if (
                     message in self.on_complete_methods
                     and norenordno in self.existing_orders
                 ):
                     self.logger.debug("Found %s in on_complete_methods", message)
+                    if order_data["status"] == "CANCELLED":
+                        self.logger.info("Order %s Cancelled", message)
+                        del self.on_complete_methods[message]
+                        return
                     (
                         on_complete_method,
                         on_complete_method_args,
                     ) = self.on_complete_methods[message]
                     self.logger.debug(
-                        "Current on_complete_methods_args: %s",
-                        json.dumps(on_complete_method_args, indent=2),
+                        "Current on_complete_methods_args: %s | %s",
+                        on_complete_method,
+                        on_complete_method_args,
                     )
                     ## put the order data in the new args as keys
                     order_data["user_data"] = on_complete_method_args
@@ -243,6 +319,14 @@ class EventEngine:
                     ## remove this from on_complete_methods
                     self.logger.debug("Removing %s from on_complete_methods", message)
                     del self.on_complete_methods[message]
+                    self.logger.debug(
+                        "Still to complete: %s", self.on_complete_methods.keys()
+                    )
+                else:
+                    self.logger.debug(
+                        "Ignored Matching Order update %s",
+                        json.dumps(order_data, indent=2),
+                    )
             else:
                 self.logger.debug(
                     "Ignored Order update %s", json.dumps(order_data, indent=2)
@@ -252,6 +336,19 @@ class EventEngine:
             ## stacktrace
             self.logger.error(full_stack())
             sys.exit(-1)
+
+    def _all_unsubscribed(self):
+        """
+        All unsubscribed
+        """
+        return len(self.subscribed_symbols) == 0
+
+    def _all_registration_completed(self):
+        """
+        All registered methods completed
+        """
+        ## check for self.on_complete_methods and self.user_methods empty
+        return not self.on_complete_methods and len(self.user_methods) == 0
 
     def subscribe(self, symbols_list):
         """
@@ -285,12 +382,6 @@ class EventEngine:
             self.subscribed_symbols,
         )
 
-    def _all_unsubscribed(self):
-        """
-        All unsubscribed
-        """
-        return len(self.subscribed_symbols) == 0
-
     def day_over(self):
         """
         Day over
@@ -319,9 +410,16 @@ class EventEngine:
 
     def is_running(self):
         """
-        Is running
+        Is running when either of the following is true
+        1. self.running is True
+        2. self.subscribed_symbols is non empty
+        3. self.on_complete_methods is non empty
         """
-        return self.running and not self._all_unsubscribed()
+        return (
+            self.running
+            or (not self._all_unsubscribed())
+            or (not self._all_registration_completed())
+        )
 
     def stop(self):
         """
@@ -360,7 +458,7 @@ class EventEngine:
         Register a method
         """
         self.logger.debug(
-            "Registering subscribe_msg=%s for callback=%s with args=%s",
+            "Registering event subscribe_msg=%s for callback=%s with args=%s",
             subscribe_msg,
             user_method,
             json.dumps(user_method_args, indent=2),
