@@ -1,0 +1,22 @@
+version: '3.1'
+## create a postgresql service
+##  psql -U admin -d shoonya
+services:
+  postgres-shoonya:
+    image: postgres:15.5-alpine
+    environment:
+      POSTGRES_PASSWORD: admin
+      POSTGRES_USER: admin
+      POSTGRES_DB: shoonya
+    ports:
+      - 6000:5432
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
+
+  minimal-redis:
+    image: redis:alpine
+    restart: always
+    container_name: minimal-redis
+    command: redis-server --save 20 1 --loglevel warning --logfile /dev/null
+    ports:
+      - "6379:6379"

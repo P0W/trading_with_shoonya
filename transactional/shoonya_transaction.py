@@ -16,7 +16,7 @@ from utils import validate
 from utils import delay_decorator
 
 ## pylint: disable=import-error
-import transaction_manager
+import transaction_manager_postgres
 
 
 class ShoonyaTransaction:
@@ -26,10 +26,14 @@ class ShoonyaTransaction:
 
     def __init__(self, api_object: ShoonyaApiPy):
         self.api = api_object
-        self.transaction_manager = transaction_manager.TransactionManager(
+        self.transaction_manager = transaction_manager_postgres.TransactionManager(
             self.api,
-            {
-                "db_file": "transactions.db",
+            config={
+                "dbname": "shoonya",
+                "user": "admin",
+                "password": "admin",
+                "host": "localhost",
+                "port": "6000",
             },
         )
         self.logger = logging.getLogger(__name__)
@@ -191,6 +195,7 @@ def main(args):
     target = args.target
     cred_file = args.cred_file
     logger = configure_logger(args.log_level, f"shoonya_evt_driven_{index}")
+    # disable_module_logger("sqlalchemy.engine.Engine", logging.ERROR)
     logger.debug("Input Arguments: %s", json.dumps(vars(args), indent=2))
 
     api = ShoonyaApiPy(cred_file)
