@@ -4,6 +4,7 @@ Uses relational database to store orders and their status.
 """
 import json
 import logging
+import sys
 
 from client_shoonya import ShoonyaApiPy
 from const import OrderStatus
@@ -194,6 +195,7 @@ def main(args):
     qty = args.qty
     target = args.target
     cred_file = args.cred_file
+    target_mtm = args.target_mtm
     logger = configure_logger(args.log_level, f"shoonya_evt_driven_{index}")
     # disable_module_logger("sqlalchemy.engine.Engine", logging.ERROR)
     logger.debug("Input Arguments: %s", json.dumps(vars(args), indent=2))
@@ -206,13 +208,36 @@ def main(args):
 
     strikes_data = get_staddle_strike(api, index)
 
+    premium = qty * (float(strikes_data["ce_ltp"]) + float(strikes_data["pe_ltp"]))
+    premium_lost = (
+        qty
+        * sl_factor
+        * (float(strikes_data["ce_sl_ltp"]) + float(strikes_data["pe_sl_ltp"]))
+    )
+    max_loss = strikes_data["max_strike_diff"] * qty + (premium - premium_lost)
+    if target_mtm == -1:
+        logging.info("Target MTM not provided, calculating from premium")
+        target_mtm = premium * target
+    else:
+        logging.info(
+            "Target MTM provided, ignoring target %.2f %% of premium", target * 100.0
+        )
+
+    logging.info(
+        "Strikes data: %s | Max profit :%.2f | Max Loss : %.2f | Target : %.2f",
+        json.dumps(strikes_data, indent=2),
+        premium,
+        max_loss,
+        target_mtm,
+    )
+
     if args.show_strikes:
-        logger.info("Strikes data: %s", json.dumps(strikes_data, indent=2))
+        sys.exit(0)
 
     shoonya_transaction = ShoonyaTransaction(api)
-    test_flag = False
-    test_flag_2 = False
-    test_flag_3 = False
+    # test_flag = False
+    # test_flag_2 = False
+    # test_flag_3 = False
 
     while not shoonya_transaction.over():
         for item in ["ce", "pe"]:
@@ -304,7 +329,7 @@ def main(args):
                 parent_status=OrderStatus.COMPLETE,
                 cancel_remarks=f"{subscribe_msg}_stop_loss",
             )
-            shoonya_transaction.cancel_on_profit(target_profit=target)
+            shoonya_transaction.cancel_on_profit(target_profit=target_mtm)
             shoonya_transaction.place_order(  ## Place exit order, if stop loss is CANCELLED
                 order_data={
                     "buy_or_sell": "B",
@@ -333,12 +358,12 @@ def main(args):
                 remarks=f"{subscribe_msg}_unsubscribe",
                 parent_remarks=subscribe_msg,
             )
-            if not test_flag:
-                test_flag = shoonya_transaction.test(OrderStatus.COMPLETE, 5)
-            if not test_flag_2 and test_flag:
-                test_flag_2 = shoonya_transaction.test(OrderStatus.TRIGGER_PENDING, 15)
-            if not test_flag_3 and test_flag_2:
-                test_flag_3 = shoonya_transaction.test(OrderStatus.COMPLETE, 20)
+            # if not test_flag:
+            #     test_flag = shoonya_transaction.test(OrderStatus.COMPLETE, 5)
+            # if not test_flag_2 and test_flag:
+            #     test_flag_2 = shoonya_transaction.test(OrderStatus.TRIGGER_PENDING, 15)
+            # if not test_flag_3 and test_flag_2:
+            #     test_flag_3 = shoonya_transaction.test(OrderStatus.COMPLETE, 20)
             shoonya_transaction.display_order_queue()
 
 

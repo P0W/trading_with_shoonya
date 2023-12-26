@@ -133,10 +133,8 @@ class TransactionManager(order_manager.OrderManager):
             if "lp" in tick_data:
                 lp = float(tick_data["lp"])
                 tk = tick_data["tk"]
-                self.logger.debug("Feed update: %s %s", tk, lp)
                 ## upsert into the table liveltp
                 with self.lock:
-                    self.logger.info("Upserting into table liveltp")
                     self.cursor.execute(
                         """INSERT INTO liveltp
                         (symbolcode, ltp)
@@ -159,7 +157,7 @@ class TransactionManager(order_manager.OrderManager):
         symbolcode = symbol["symbolcode"]
         exchange = symbol["exchange"]
         tradingsymbol = symbol["tradingsymbol"]
-        subscribe_code = f"{symbolcode}|{exchange}"
+        subscribe_code = f"{exchange}|{symbolcode}"
         self.subscribe(subscribe_code)
 
         ## upsert into the table symbols
@@ -260,17 +258,18 @@ class TransactionManager(order_manager.OrderManager):
             buysell = row[2]
             tradingsymbol = row[3]
             ltp = float(row[4])
+            if avgprice == -1 or qty == -1:
+                continue
             if buysell == "B":
                 pnl = (ltp - avgprice) * qty
             else:
                 pnl = (avgprice - ltp) * qty
-            msg.append(
-                f"{tradingsymbol} {buysell} {qty} @ {avgprice:.2f} : {ltp:.2f} : {pnl:.2f}"
-            )
+            key = f"{tradingsymbol} {buysell} {qty} @ {avgprice:.2f}"
+            msg.append({key: f"{ltp:.2f} : {pnl:.2f}"})
             total_pnl += pnl
         if msg:
-            msg.append(f"Total PnL: {total_pnl:.2f}")
-            self.logger.info("\n".join(msg))
+            msg.append({"Total": f"{total_pnl:.2f}"})
+            self.logger.info(json.dumps(msg, indent=2))
         return total_pnl
 
     def test(self, status: OrderStatus, interval: int = 15):
