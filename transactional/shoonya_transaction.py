@@ -402,11 +402,11 @@ def quick_test():
     logger = configure_logger(logging.DEBUG, "quick_test")
     api = ShoonyaApiPy("../cred.yml")
     shoonya_transaction = ShoonyaTransaction(api)
-    shoonya_transaction.transaction_manager.instance_id = "shoonya_11768_1703608214"
+    shoonya_transaction.transaction_manager.instance_id = "shoonya_55992_1703609778"
     n, s = shoonya_transaction.transaction_manager.get_for_remarks(
-        "ce_straddle", OrderStatus.COMPLETE
+        "ce_straddle_stop_loss", OrderStatus.TRIGGER_PENDING
     )
-    logger.info("norenordno: %s | status: %s", n, s)
+    logger.info("norenordno: %s | status: %s", n, s == OrderStatus.TRIGGER_PENDING)
 
 
 if __name__ == "__main__":

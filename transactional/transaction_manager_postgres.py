@@ -216,7 +216,7 @@ class TransactionManager(order_manager.OrderManager):
         #     )
         #     self.conn.commit()
 
-    def get_for_remarks(self, remarks: str, expected: OrderStatus = None) -> (str, str):
+    def get_for_remarks(self, remarks: str, expected: OrderStatus = None) -> (str, OrderStatus):
         """
         Get norenordno if order executed for remark,
         for utc_timestamp greater than start_time, otherwise None
@@ -243,7 +243,7 @@ class TransactionManager(order_manager.OrderManager):
             if expected and isinstance(expected, OrderStatus):
                 expected_list = [expected.value]
             if expected is None or status in expected_list:
-                return norenordno, status
+                return norenordno, OrderStatus(status)
         return None, None
 
     def get_pnl(self):
