@@ -17,6 +17,7 @@ INDICES_TOKEN = {
     "GBPINR": "26",
     "JPYINR": "27",
     "BANKEX": "12",
+    "CRUDEOIL": "260604",
 }
 
 INDICES_ROUNDING = {
@@ -30,6 +31,7 @@ INDICES_ROUNDING = {
     "GBPINR": 0.25,
     "JPYINR": 0.25,
     "BANKEX": 100,
+    "CRUDEOIL": 50,
 }
 
 LOT_SIZE = {
@@ -43,6 +45,7 @@ LOT_SIZE = {
     "EURINR": 1000,
     "GBPINR": 1000,
     "JPYINR": 1000,
+    "CRUDEOIL": 100,
 }
 
 EXCHANGE = {
@@ -57,6 +60,7 @@ EXCHANGE = {
     "EURINR": "CDS",
     "GBPINR": "CDS",
     "JPYINR": "CDS",
+    "CRUDEOIL": "MCX",
 }
 
 
@@ -72,6 +76,7 @@ SCRIP_SYMBOL_NAME = {
     "EURINR": "EURINR",
     "GBPINR": "GBPINR",
     "JPYINR": "JPYINR",
+    "CRUDEOIL": "CRUDEOIL",
 }
 
 

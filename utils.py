@@ -194,6 +194,8 @@ def get_exchange(tradingsymbol, is_index=False):
             return "BSE"
         if tradingsymbol in ["USDINR", "EURINR", "GBPINR", "JPYINR"]:
             return "CDS"
+        if tradingsymbol in ["CRUDEOIL"]:
+            return "MCX"
     return EXCHANGE[get_index(tradingsymbol)]
 
 
@@ -333,6 +335,7 @@ def parse_args():
             "MIDCPNIFTY",
             "SENSEX",
             "BANKEX",
+            "CRUDEOIL"
         ],
     )
     args.add_argument("--qty", required=True, type=int, help="Quantity to trade")
@@ -394,16 +397,13 @@ def disable_module_logger(module_name, level=logging.CRITICAL):
 ## since the last invocation
 def delay_decorator(delay):
     """Decorator that ensures function can't be called more often than delay seconds."""
-
     def decorator(func):
         # Store the time the function was last called
         last_called = [0]
-
         @wraps(func)
         def wrapper(*args, **kwargs):
             # Get the current time
             now = time.time()
-
             # If enough time has passed since the last call, call the function
             if now - last_called[0] > delay:
                 result = func(*args, **kwargs)
@@ -412,10 +412,16 @@ def delay_decorator(delay):
                 return result
             # If not enough time has passed, return None
             return None
-
         return wrapper
-
     return decorator
+
+def get_instance_id():
+    """
+    Get the instance id
+    """
+    process_id = os.getpid()
+    timestamp = int(time.time())
+    return f"{process_id}_{timestamp}"
 
 refresh_indices_code()
 disable_module_logger("urllib3", logging.CRITICAL)
@@ -424,3 +430,10 @@ disable_module_logger("urllib3.connectionpool", logging.CRITICAL)
 disable_module_logger("websocket", logging.ERROR)
 ## disable NorenApi logger
 disable_module_logger("NorenRestApiPy.NorenApi", logging.ERROR)
+
+if __name__ == "__main__":
+    configure_logger(prefix_log_file="test", log_level=logging.DEBUG)
+    from client_shoonya import ShoonyaApiPy
+    api = ShoonyaApiPy()
+    strikes_data = get_staddle_strike(api, "CRUDEOIL")
+    logging.info(strikes_data)

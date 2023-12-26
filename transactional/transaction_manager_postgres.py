@@ -6,14 +6,14 @@ import json
 import logging
 import sys
 import threading
+from typing import Any
 from typing import Dict
 
-import psycopg2
+import psycopg2.extras
 from const import OrderStatus
 from utils import full_stack
 
-## pylint: disable=import-error
-import order_manager
+import order_manager  ## pylint: disable=import-error
 
 
 class TransactionManager(order_manager.OrderManager):
@@ -21,7 +21,10 @@ class TransactionManager(order_manager.OrderManager):
     Transaction manager class
     """
 
-    def __init__(self, api_object, config):
+    def __init__(self, api_object: Any, config: Dict):
+        """
+        Initialize the transaction manager
+        """
         super().__init__(api_object, config)
         self.logger = logging.getLogger(__name__)
         self.lock = threading.Lock()
@@ -31,8 +34,10 @@ class TransactionManager(order_manager.OrderManager):
                 port={config['port']} \
                     dbname={config['dbname']}"
         self.logger.info("Connecting to database %s", conn_string)
+        self.instance_id = config["instance_id"]
+
         self.conn = psycopg2.connect(conn_string)
-        self.cursor = self.conn.cursor()
+        self.cursor = self.conn.cursor(cursor_factory=psycopg2.extras.NamedTupleCursor)
         ## get the current unix utc_timestamp using datetime
         self.start_time = self._get_utc_timestamp()
         self._create_tables()
@@ -55,7 +60,8 @@ class TransactionManager(order_manager.OrderManager):
                 qty INTEGER,
                 buysell char(1),
                 tradingsymbol TEXT,
-                status TEXT)"""
+                status TEXT,
+                instance TEXT)"""
             )
             ## create a table liveltp schema : (symbolcode, ltp)
             table_name = "liveltp"
@@ -66,19 +72,20 @@ class TransactionManager(order_manager.OrderManager):
                 ltp REAL)"""
             )
 
-            ## create a table symbols schema : (symbolcode, exchange, tradingsymbol)
+            ## create a table symbols schema : (symbolcode, exchange, tradingsymbol, instance)
             table_name = "symbols"
             self.logger.info("Creating table symbols")
             self.cursor.execute(
                 f"""CREATE TABLE IF NOT EXISTS {table_name}
                 (symbolcode TEXT PRIMARY KEY,
                 exchange TEXT,
-                tradingsymbol TEXT)"""
+                tradingsymbol TEXT,
+                instance TEXT)"""
             )
 
             self.conn.commit()
 
-    def _event_handler_order_update(self, order_data):
+    def _event_handler_order_update(self, order_data: Dict):
         """
         Event handler for order update
         """
@@ -103,29 +110,32 @@ class TransactionManager(order_manager.OrderManager):
             "buysell": buysell,
             "tradingsymbol": tradingsymbol,
             "status": status,
+            "instance": self.instance_id,
         }
         with self.lock:
-            self.logger.info("Upserting into table transactions")
             ## pylint: disable=line-too-long
             self.cursor.execute(
                 """INSERT INTO transactions
-                (norenordno, utc_timestamp, remarks, avgprice, qty, buysell, tradingsymbol, status)
-                VALUES (%(norenordno)s, to_timestamp(%(utc_timestamp)s), %(remarks)s, %(avgprice)s, %(qty)s, %(buysell)s, %(tradingsymbol)s, %(status)s)
+                (norenordno, utc_timestamp, remarks, avgprice, qty, buysell, tradingsymbol, status, instance)
+                VALUES (%(norenordno)s, to_timestamp(%(utc_timestamp)s), %(remarks)s, %(avgprice)s, %(qty)s, %(buysell)s, %(tradingsymbol)s, %(status)s , %(instance)s)
                 ON CONFLICT (norenordno) DO UPDATE
-                SET utc_timestamp = excluded.utc_timestamp,
-                remarks = excluded.remarks,
-                avgprice = excluded.avgprice,
-                qty = excluded.qty,
-                buysell = excluded.buysell,
-                tradingsymbol = excluded.tradingsymbol,
-                status = excluded.status
+                SET utc_timestamp = to_timestamp(%(utc_timestamp)s),
+                remarks = %(remarks)s,
+                avgprice = %(avgprice)s,
+                qty = %(qty)s,
+                buysell = %(buysell)s,
+                tradingsymbol = %(tradingsymbol)s,
+                status = %(status)s,
+                instance = %(instance)s
                 """,
                 upsert_data,
             )
             self.conn.commit()
-        self.logger.info("Order update: %s", json.dumps(order_data, indent=2))
+        self.logger.debug(
+            "Upserting into table transactions: %s", json.dumps(upsert_data, indent=2)
+        )
 
-    def _event_handler_feed_update(self, tick_data):
+    def _event_handler_feed_update(self, tick_data: Dict):
         """
         Event handler for feed update
         """
@@ -148,7 +158,7 @@ class TransactionManager(order_manager.OrderManager):
         except Exception as e:  ## pylint: disable=broad-except
             self.logger.error("Exception: %s", e)
             self.logger.error("Stack Trace : %s", full_stack())
-            sys.exit(1)
+            sys.exit(-1)
 
     def subscribe_symbols(self, symbol: Dict):
         """
@@ -165,16 +175,20 @@ class TransactionManager(order_manager.OrderManager):
             "symbolcode": symbolcode,
             "exchange": exchange,
             "tradingsymbol": tradingsymbol,
+            "instance": self.instance_id,
         }
         with self.lock:
-            self.logger.info("Upserting into table symbols")
+            self.logger.info(
+                "Upserting into table symbols %s", json.dumps(upsert_data, indent=2)
+            )
             self.cursor.execute(
                 """INSERT INTO symbols
-                (symbolcode, exchange, tradingsymbol)
-                VALUES (%(symbolcode)s, %(exchange)s, %(tradingsymbol)s)
+                (symbolcode, exchange, tradingsymbol, instance)
+                VALUES (%(symbolcode)s, %(exchange)s, %(tradingsymbol)s, %(instance)s)
                 ON CONFLICT (symbolcode) DO UPDATE
                 SET exchange = %(exchange)s,
-                tradingsymbol = %(tradingsymbol)s
+                tradingsymbol = %(tradingsymbol)s,
+                instance = %(instance)s
                 """,
                 upsert_data,
             )
@@ -186,48 +200,51 @@ class TransactionManager(order_manager.OrderManager):
         """
         symbolcode = symbol["symbolcode"]
         exchange = symbol["exchange"]
-        subscribe_code = f"{symbolcode}|{exchange}"
+        subscribe_code = f"{exchange}|{symbolcode}"
         self.unsubscribe(subscribe_code)
 
         ## delete from the table symbols
-        with self.lock:
-            self.logger.info("Deleting from table symbols")
-            self.cursor.execute(
-                f"""DELETE FROM symbols
-                WHERE symbolcode = '{symbolcode}'
-                """
-            )
-            self.conn.commit()
+        ## Note: Don't delete from the table symbols,
+        ## to keep track of all the symbols and correctly calculate PnL
+        # with self.lock:
+        #     self.logger.info("Deleting from table symbols")
+        #     self.cursor.execute(
+        #         """DELETE FROM symbols
+        #         WHERE symbolcode=%s AND instance=%s
+        #         """,
+        #         (symbolcode, self.instance_id),
+        #     )
+        #     self.conn.commit()
 
-    def get_for_remarks(self, remarks: str, expected: OrderStatus = None) -> str:
+    def get_for_remarks(self, remarks: str, expected: OrderStatus = None) -> (str, str):
         """
         Get norenordno if order executed for remark,
         for utc_timestamp greater than start_time, otherwise None
         """
-        reponse = None
+        response = None
         with self.lock:
             try:
                 self.cursor.execute(
                     """SELECT norenordno, status
                     FROM transactions
-                    WHERE remarks=%s AND utc_timestamp > to_timestamp(%s)
+                    WHERE remarks=%s AND instance=%s
                     """,
-                    (remarks, self.start_time),
+                    (remarks, self.instance_id),
                 )
-                reponse = self.cursor.fetchone()
+                response = self.cursor.fetchone()
             except psycopg2.OperationalError as ex:
                 self.logger.error("Exception: %s", ex)
                 ## stacktrace
                 self.logger.error(full_stack())
-        if reponse is not None:
-            return_norenordno = reponse[0]
-            status = reponse[1]
+        if response is not None:
+            norenordno = response.norenordno
+            status = response.status
             expected_list = expected
             if expected and isinstance(expected, OrderStatus):
                 expected_list = [expected.value]
             if expected is None or status in expected_list:
-                return return_norenordno
-        return None
+                return norenordno, status
+        return None, None
 
     def get_pnl(self):
         """
@@ -239,25 +256,30 @@ class TransactionManager(order_manager.OrderManager):
         """
         rows = []
         with self.lock:
-            self.cursor.execute(
-                """SELECT transactions.avgprice, transactions.qty, transactions.buysell, 
-                        transactions.tradingsymbol, liveltp.ltp
-                        FROM 
-                            transactions, liveltp, symbols 
-                        WHERE 
-                            transactions.tradingsymbol = symbols.tradingsymbol AND 
-                            symbols.symbolcode = liveltp.symbolcode"""
-            )
-            rows = self.cursor.fetchall()
-
+            try:
+                self.cursor.execute(
+                    """SELECT transactions.avgprice, transactions.qty, transactions.buysell, 
+                            transactions.tradingsymbol, liveltp.ltp
+                    FROM transactions
+                    JOIN symbols ON transactions.instance = symbols.instance 
+                                    AND transactions.tradingsymbol = symbols.tradingsymbol
+                    JOIN liveltp ON symbols.symbolcode = liveltp.symbolcode
+                    WHERE transactions.instance = %s""",
+                    (self.instance_id,),
+                )
+                rows = self.cursor.fetchall()
+            except Exception as e:  ## pylint: disable=broad-exception-caught
+                self.logger.error("Failed to execute SQL query %s", e)
+                self.logger.error(full_stack())
+                return -999.999
         total_pnl = 0
         msg = []
         for row in rows:
-            avgprice = float(row[0])
-            qty = int(row[1])
-            buysell = row[2]
-            tradingsymbol = row[3]
-            ltp = float(row[4])
+            avgprice = float(row.avgprice)
+            qty = int(row.qty)
+            buysell = row.buysell
+            tradingsymbol = row.tradingsymbol
+            ltp = float(row.ltp)
             if avgprice == -1 or qty == -1:
                 continue
             if buysell == "B":
@@ -284,9 +306,9 @@ class TransactionManager(order_manager.OrderManager):
                 self.cursor.execute(
                     """UPDATE transactions
                     SET status = %s
-                    WHERE utc_timestamp > to_timestamp(%s)
+                    WHERE instance = %s
                     """,
-                    (status.value, self.start_time),
+                    (status.value, self.instance_id),
                 )
                 self.conn.commit()
             self.logger.info("Test complete")
