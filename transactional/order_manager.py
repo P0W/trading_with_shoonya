@@ -2,7 +2,6 @@
 Order manager
 """
 import datetime
-import json
 import logging
 import time
 from typing import Any
@@ -39,9 +38,7 @@ class OrderManager:
             self.logger.info("Websocket Re-Opened")
             ## check if self.subscribed_symbols is non empty, if yes resubscribe
             if self.subscribed_symbols:
-                self.logger.info(
-                    "Resubscribing to %s", json.dumps(self.subscribed_symbols, indent=2)
-                )
+                self.logger.info("Resubscribing to %s", self.subscribed_symbols)
                 ## convert to list
                 self.api.subscribe(list(self.subscribed_symbols))
         else:

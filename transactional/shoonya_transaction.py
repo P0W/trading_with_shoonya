@@ -5,6 +5,7 @@ Uses relational database to store orders and their status.
 import json
 import logging
 import sys
+import time
 from typing import Dict
 
 from client_shoonya import ShoonyaApiPy
@@ -17,6 +18,7 @@ from utils import get_staddle_strike
 from utils import parse_args
 from utils import round_to_point5
 from utils import validate
+from utils import get_remarks
 
 import transaction_manager_postgres  ## pylint: disable=import-error
 
@@ -26,11 +28,12 @@ class ShoonyaTransaction:
     Shoonya Transaction class
     """
 
-    def __init__(self, api_object: ShoonyaApiPy):
+    def __init__(self, api_object: ShoonyaApiPy, instance_id: str):
         """
         Initialize the Shoonya Transaction
         """
         self.api = api_object
+        self.instance_id = instance_id
         self.transaction_manager = transaction_manager_postgres.TransactionManager(
             self.api,
             config={
@@ -39,13 +42,13 @@ class ShoonyaTransaction:
                 "password": "admin",
                 "host": "localhost",
                 "port": "6000",
-                "instance_id": f"shoonya_{get_instance_id()}",
+                "instance_id": self.instance_id,
             },
         )
         self.logger = logging.getLogger(__name__)
         self.order_queue = set()
         for item in ["ce", "pe"]:
-            message = f"{item}_straddle"
+            message = get_remarks(instance_id=self.instance_id, msg=f"{item}_straddle")
             self.order_queue.add(message)
             self.order_queue.add(f"{message}_stop_loss")
             self.order_queue.add(f"{message}_subscribe")
@@ -173,54 +176,66 @@ class ShoonyaTransaction:
                     ## if cancel_remarks is completed, simply remove remarks from order queue
                     self.order_queue.remove(remarks)
 
-    @delay_decorator(delay=15)
+    @delay_decorator(delay=10)
     def cancel_on_profit(self, target_profit: float):
-        """
-        Cancel order using Shoonya API
-        """
+        """Cancel order using Shoonya API"""
         total_pnl = self.transaction_manager.get_pnl()
         if total_pnl > target_profit:
             self.logger.info("Target profit reached, cancelling all pending orders")
-            for item in ["ce", "pe"]:
-                remarks = f"{item}_straddle"
-
-                norenordno, status = self.transaction_manager.get_for_remarks(
-                    f"{remarks}_stop_loss"
-                )
-                if norenordno:
-                    if status == OrderStatus.TRIGGER_PENDING:
-                        response = self.api.cancel_order(norenordno)
-                        self.logger.info("Order cancelled for stop_loss: %s", response)
-                    elif status == OrderStatus.COMPLETE:
-                        self.order_queue.add(f"{remarks}_target_hit")
-
-                norenordno, status = self.transaction_manager.get_for_remarks(
-                    f"{remarks}_book_profit"
-                )
-                if norenordno:
-                    if status == OrderStatus.OPEN:
-                        response = self.api.cancel_order(norenordno)
-                        self.logger.info(
-                            "Order cancelled for book_profit: %s", response
-                        )
-                    elif status == OrderStatus.COMPLETE:
-                        self.order_queue.add(f"{remarks}_target_hit")
+            self._square_off()
 
     def test(self, status: str, interval: int = 15):
-        """
-        Test function
-        """
+        """Test function"""
         return self.transaction_manager.test(status, interval)
 
-    @delay_decorator(delay=25)
+    @delay_decorator(delay=30)
     def display_order_queue(self):
-        """
-        Display order queue
-        """
-        self.logger.info("Order queue: %s", self.order_queue)
+        """Display order queue"""
+        self.logger.debug("Order queue: %s", self.order_queue)
+
+    def _square_off(self):
+        """Square off all positions"""
+        order_book = self.transaction_manager.get_orders()
+        for order in order_book:
+            order_status = order["status"]
+            remarks = order["remarks"]
+            if order_status in [
+                OrderStatus.OPEN,
+                OrderStatus.TRIGGER_PENDING,
+                OrderStatus.PENDING,
+            ]:
+                self.api.cancel_order(order["norenordno"])
+                self.logger.info("Order cancelled: %s", remarks)
+            elif order_status == OrderStatus.COMPLETE:
+                self.logger.info("Placing square off orders: %s", remarks)
+                tradingsymbol = order["tradingsymbol"]
+                qty = order["qty"]
+                exchange = get_exchange(tradingsymbol)
+                opposite_buysell = "B" if order["buysell"] == "S" else "S"
+                ## Place exit order at Market price
+                response = self.api.place_order(
+                    buy_or_sell=opposite_buysell,
+                    product_type="M",
+                    exchange=exchange,
+                    tradingsymbol=tradingsymbol,
+                    quantity=qty,
+                    discloseqty=0,
+                    price_type="MKT",
+                    price=0,
+                    trigger_price=None,
+                    retention="DAY",
+                    remarks=f"{remarks}_square_off",
+                )
+                self.logger.debug("Square off Order placed: %s", response)
+            else:
+                self.logger.debug("Ignoring Order status: %s", order["status"])
+        ## Empty the order queue
+        self.order_queue.clear()
+        ## Wait for 5 seconds
+        time.sleep(5)
 
 
-## pylint: disable=too-many-locals
+## pylint: disable=too-many-locals, too-many-statements
 def main(args):
     """
     Main function
@@ -232,9 +247,16 @@ def main(args):
     target = args.target
     cred_file = args.cred_file
     target_mtm = args.target_mtm
+    instance_id = args.instance_id
     logger = configure_logger(args.log_level, f"shoonya_evt_driven_{index}")
 
     logger.debug("Input Arguments: %s", json.dumps(vars(args), indent=2))
+    if not instance_id:
+        instance_id = f"shoonya_{get_instance_id()}"
+    else:
+        logger.warning("Instance id provided, this is running for previous instance")
+
+    logger.info("Running Instance: %s", instance_id)
 
     api = ShoonyaApiPy(cred_file)
 
@@ -269,11 +291,11 @@ def main(args):
     if args.show_strikes:
         sys.exit(0)
 
-    shoonya_transaction = ShoonyaTransaction(api)
+    shoonya_transaction = ShoonyaTransaction(api_object=api, instance_id=instance_id)
 
     while not shoonya_transaction.over():
         for item in ["ce", "pe"]:
-            subscribe_msg = f"{item}_straddle"
+            subscribe_msg = get_remarks(instance_id=instance_id, msg=f"{item}_straddle")
 
             symbol = strikes_data[f"{item}_strike"]
             ltp = float(strikes_data[f"{item}_ltp"])
@@ -400,12 +422,20 @@ def quick_test():
     Quick test function
     """
     logger = configure_logger(logging.DEBUG, "quick_test")
+
+    ## Setup
     api = ShoonyaApiPy("../cred.yml")
-    shoonya_transaction = ShoonyaTransaction(api)
-    shoonya_transaction.transaction_manager.instance_id = "shoonya_55992_1703609778"
+    instance_id = "shoonya_55992_1703609778"
+    msg = "ce_straddle_stop_loss"
+    shoonya_transaction = ShoonyaTransaction(api_object=api, instance_id=instance_id)
+    remark = get_remarks(instance_id=instance_id, msg=msg)
+
+    ## Act
     n, s = shoonya_transaction.transaction_manager.get_for_remarks(
-        "ce_straddle_stop_loss", OrderStatus.TRIGGER_PENDING
+        remark, OrderStatus.TRIGGER_PENDING
     )
+
+    ## Verify
     logger.info("norenordno: %s | status: %s", n, s == OrderStatus.TRIGGER_PENDING)
 
 

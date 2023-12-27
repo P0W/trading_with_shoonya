@@ -6,7 +6,7 @@ import json
 import logging
 import sys
 import threading
-from typing import Any
+from typing import Any, List
 from typing import Dict
 
 import psycopg2.extras
@@ -85,12 +85,22 @@ class TransactionManager(order_manager.OrderManager):
 
             self.conn.commit()
 
+    def _check_for_self(self, remarks: str) -> bool:
+        """
+        Check if the order is placed by self
+        """
+        return remarks.startswith(self.instance_id)
+
     def _event_handler_order_update(self, order_data: Dict):
         """
         Event handler for order update
         """
-        norenordno = order_data["norenordno"]
         remarks = order_data["remarks"]
+        if not self._check_for_self(remarks):
+            logging.debug("Ignoring other instance order update %s", remarks)
+            return
+
+        norenordno = order_data["norenordno"]
         avgprice = -1
         qty = -1
         if "fillshares" in order_data and "flprc" in order_data:
@@ -216,7 +226,9 @@ class TransactionManager(order_manager.OrderManager):
         #     )
         #     self.conn.commit()
 
-    def get_for_remarks(self, remarks: str, expected: OrderStatus = None) -> (str, OrderStatus):
+    def get_for_remarks(
+        self, remarks: str, expected: OrderStatus = None
+    ) -> (str, OrderStatus):
         """
         Get norenordno if order executed for remark,
         for utc_timestamp greater than start_time, otherwise None
@@ -291,8 +303,39 @@ class TransactionManager(order_manager.OrderManager):
             total_pnl += pnl
         if msg:
             msg.append({"Total": f"{total_pnl:.2f}"})
-            self.logger.info(json.dumps(msg, indent=2))
+            self.logger.info(json.dumps(msg, indent=1))
         return total_pnl
+
+    def get_orders(self) -> List[Dict]:
+        """Get all orders for this instance"""
+        rows = []
+        with self.lock:
+            try:
+                self.cursor.execute(
+                    """SELECT norenordno, remarks, avgprice, qty, buysell, tradingsymbol, status
+                    FROM transactions
+                    WHERE instance = %s""",
+                    (self.instance_id,),
+                )
+                rows = self.cursor.fetchall()
+            except Exception as e:  ## pylint: disable=broad-exception-caught
+                self.logger.error("Failed to execute SQL query %s", e)
+                self.logger.error(full_stack())
+                return []
+        orders = []
+        for row in rows:
+            orders.append(
+                {
+                    "norenordno": row.norenordno,
+                    "remarks": row.remarks,
+                    "avgprice": row.avgprice,
+                    "qty": row.qty,
+                    "buysell": row.buysell,
+                    "tradingsymbol": row.tradingsymbol,
+                    "status": OrderStatus(row.status),
+                }
+            )
+        return orders
 
     def test(self, status: OrderStatus, interval: int = 15):
         """

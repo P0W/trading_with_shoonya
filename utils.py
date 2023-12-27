@@ -383,6 +383,11 @@ def parse_args():
         default="cred.yml",
         help="Credential file",
     )
+    args.add_argument(
+        "--instance-id",
+        default=None,
+        help="Instance id for multiple instance of the scripts",
+    )
 
     return args.parse_args()
 
@@ -422,6 +427,12 @@ def get_instance_id():
     process_id = os.getpid()
     timestamp = int(time.time())
     return f"{process_id}_{timestamp}"
+
+def get_remarks(instance_id:str, msg:str):
+    """
+    Get the remarks suffix
+    """
+    return f"{instance_id}|{msg}"
 
 refresh_indices_code()
 disable_module_logger("urllib3", logging.CRITICAL)
