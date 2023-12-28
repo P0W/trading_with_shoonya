@@ -33,7 +33,7 @@ options:
 To install the project, follow these steps:
 
 1. Clone the repository
-2. Navigate to the project directory
+2. Navigate to the project directory and cd into transactional
 3. Install the required Python packages, typically in a virtual environment,
 
 ```bash
@@ -43,6 +43,8 @@ To install the project, follow these steps:
 4. Sample runs
 
 ```bash
-   python .\shoonya.py --show-strikes --qty 500 --index NIFTY
-   python .\shoonya.py --qty 75 --index BANKNIFTY --target 0.25 
+   python .\shoonya_transaction.py --show-strikes --qty 500 --index NIFTY
+   python .\shoonya_transaction.py --qty 75 --index BANKNIFTY --target 0.25 
 ```
+
+**NOTE**: The `shoonya.py` is in decrecation mode, however one can look into the event based algo trade bot idea.
