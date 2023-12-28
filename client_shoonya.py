@@ -1,6 +1,7 @@
 """
-    Shoonaya API Client with login caching
+Shoonaya API Client with login caching
 """
+import datetime
 import logging
 
 import pyotp
@@ -14,48 +15,72 @@ class ShoonyaApiPy(NorenApi):
     Shoonya API Initializer
     """
 
-    def __init__(self, cred_file = "cred.yml", force_login=False):
+    def __init__(self, cred_file="cred.yml", force_login=False):
         self.logger = logging.getLogger(__name__)
+        self.redis_client = redis.Redis()
+        self.cred_file = cred_file
+        self.access_token_key = "access_token_shoonya"
+        self.last_login_date_key = "last_login_date_shoonya"
+        self.token_expiry = 2 * 60 * 60  # 2 hours expiry
         NorenApi.__init__(
             self,
             host="https://api.shoonya.com/NorenWClientTP/",
             websocket="wss://api.shoonya.com/NorenWSTP/",
         )
-        self._login(cred_file, force_login)
+        self._login(force_login)
 
-    def _login(self, cred_file, force=False):
+    def _get_credentials(self):
         """
-        Login to the Shoonya API
+        Load and return credentials from file
         """
-        ACCESS_TOKEN_KEY = "access_token_shoonya"  ## pylint: disable=invalid-name
+        with open(self.cred_file, encoding="utf-8") as f:
+            return yaml.load(f, Loader=yaml.FullLoader)
+
+    def _login(self, force=False):
+        """
+        Login to the Shoonya API. If force is True, force a new login.
+        If force is False, use cached access token if available and not expired.
+        """
         try:
-            redis_client = redis.Redis()
-            access_token = redis_client.get(ACCESS_TOKEN_KEY)
-            if access_token and not force:
+            access_token = self.redis_client.get(self.access_token_key)
+            last_login_date = self.redis_client.get(self.last_login_date_key)
+            today = datetime.date.today().isoformat()
+
+            if (
+                access_token
+                and not force
+                and last_login_date
+                and last_login_date.decode("utf-8") == today
+            ):
                 access_token = access_token.decode("utf-8")
-                with open(cred_file, encoding="utf-8") as f:
-                    cred = yaml.load(f, Loader=yaml.FullLoader)
-                    self.set_session(cred["user"], cred["pwd"], access_token)
+                cred = self._get_credentials()
+                self.set_session(cred["user"], cred["pwd"], access_token)
                 self.logger.debug("Access token found in cache, logging in")
             else:
-                raise ValueError("No access token found")
-        except Exception as ex:  ## pylint: disable=broad-except
-            self.logger.debug("No access token found in cache, logging in: %s", ex)
-            with open(cred_file, encoding="utf-8") as f:
-                cred = yaml.load(f, Loader=yaml.FullLoader)
-
-                ret = self.login(
-                    userid=cred["user"],
-                    password=cred["pwd"],
-                    twoFA=pyotp.TOTP(cred["totp_pin"]).now(),
-                    vendor_code=cred["vc"],
-                    api_secret=cred["apikey"],
-                    imei=cred["imei"],
+                raise ValueError(
+                    f"No access token found for key {self.access_token_key} or token expired"
                 )
-                susertoken = ret["susertoken"]
-                try:
-                    redis_client.set(
-                        ACCESS_TOKEN_KEY, susertoken, ex=2 * 60 * 60
-                    )  # 2 hours expiry
-                except Exception:  ## pylint: disable=broad-except
-                    pass
+        except (redis.exceptions.RedisError, ValueError) as ex:
+            self.logger.debug(
+                "No access token found in cache or token expired, logging in: %s", ex
+            )
+            cred = self._get_credentials()
+
+            ret = self.login(
+                userid=cred["user"],
+                password=cred["pwd"],
+                twoFA=pyotp.TOTP(cred["totp_pin"]).now(),
+                vendor_code=cred["vc"],
+                api_secret=cred["apikey"],
+                imei=cred["imei"],
+            )
+            susertoken = ret["susertoken"]
+            try:
+                self.redis_client.set(
+                    self.access_token_key, susertoken, ex=self.token_expiry
+                )
+                self.redis_client.set(self.last_login_date_key, today)
+            except redis.exceptions.RedisError as redis_error:
+                self.logger.error(
+                    "Failed to set access token or login date in cache: %s", redis_error
+                )
