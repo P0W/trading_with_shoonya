@@ -77,10 +77,11 @@ class TransactionManager(order_manager.OrderManager):
             self.logger.info("Creating table symbols")
             self.cursor.execute(
                 f"""CREATE TABLE IF NOT EXISTS {table_name}
-                (symbolcode TEXT PRIMARY KEY,
+                (symbolcode TEXT,
                 exchange TEXT,
                 tradingsymbol TEXT,
-                instance TEXT)"""
+                instance TEXT,
+                PRIMARY KEY (symbolcode, instance))"""
             )
 
             self.conn.commit()
@@ -195,10 +196,9 @@ class TransactionManager(order_manager.OrderManager):
                 """INSERT INTO symbols
                 (symbolcode, exchange, tradingsymbol, instance)
                 VALUES (%(symbolcode)s, %(exchange)s, %(tradingsymbol)s, %(instance)s)
-                ON CONFLICT (symbolcode) DO UPDATE
+                ON CONFLICT (symbolcode, instance) DO UPDATE
                 SET exchange = %(exchange)s,
-                tradingsymbol = %(tradingsymbol)s,
-                instance = %(instance)s
+                tradingsymbol = %(tradingsymbol)s
                 """,
                 upsert_data,
             )

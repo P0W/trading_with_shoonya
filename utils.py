@@ -392,7 +392,7 @@ def parse_args():
     return args.parse_args()
 
 
-def disable_module_logger(module_name, level=logging.CRITICAL):
+def set_module_logger(module_name, level=logging.CRITICAL):
     """
     Disable the module logger
     """
@@ -435,16 +435,16 @@ def get_remarks(instance_id:str, msg:str):
     return f"{instance_id}|{msg}"
 
 refresh_indices_code()
-disable_module_logger("urllib3", logging.CRITICAL)
-disable_module_logger("urllib3.connectionpool", logging.CRITICAL)
+set_module_logger("urllib3", logging.CRITICAL)
+set_module_logger("urllib3.connectionpool", logging.CRITICAL)
 ## disable websocket logger
-disable_module_logger("websocket", logging.ERROR)
+set_module_logger("websocket", logging.ERROR)
 ## disable NorenApi logger
-disable_module_logger("NorenRestApiPy.NorenApi", logging.ERROR)
+set_module_logger("NorenRestApiPy.NorenApi", logging.DEBUG)
 
 if __name__ == "__main__":
     configure_logger(prefix_log_file="test", log_level=logging.DEBUG)
     from client_shoonya import ShoonyaApiPy
     api = ShoonyaApiPy()
-    strikes_data = get_staddle_strike(api, "CRUDEOIL")
-    logging.info(strikes_data)
+    #strikes_data = get_staddle_strike(api, "CRUDEOIL")
+    #logging.info(strikes_data)
