@@ -248,7 +248,7 @@ def main(args):
     cred_file = args.cred_file
     target_mtm = args.target_mtm
     instance_id = args.instance_id
-    logger = configure_logger(args.log_level, f"shoonya_evt_driven_{index}")
+    logger = configure_logger(args.log_level, f"shoonya_transaction_{index}")
 
     logger.debug("Input Arguments: %s", json.dumps(vars(args), indent=2))
     if not instance_id:
