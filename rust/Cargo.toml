@@ -1,0 +1,18 @@
+[package]
+name = "rust"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+chrono = "0.4.31"
+flexi_logger = "0.27.3"
+log = "0.4.20"
+redis = "0.24.0"
+reqwest = { version = "0.11.23", features = ["blocking", "json"] }
+serde_json = "1.0.108"
+serde_yaml = "0.9.29"
+sha2 = "0.10.8"
+totp-rs = "5.4.0"
+zip = "0.6.6"
