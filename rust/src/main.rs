@@ -8,7 +8,7 @@ mod scrips;
 mod urls;
 
 fn main() {
-    logger::init_logger("shhonya_rust", log::LevelFilter::Debug);
+    logger::init_logger("shoonya_rust", log::LevelFilter::Debug);
 
     let mut auth = auth::auth::Auth::new();
 
