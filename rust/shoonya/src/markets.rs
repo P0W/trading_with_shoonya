@@ -46,7 +46,7 @@ pub mod markets {
         Ok(res_dict)
     }
 
-    pub fn get_quote(auth: &crate::auth::auth::Auth, exchange: &Exchange, token: &str) -> String {
+    pub fn get_quote(auth: &crate::auth::auth::Auth, exchange: &Exchange, token: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         let values = json!({
             "ordersource": "API",
             "exch": get_exchange_str(exchange),
@@ -66,6 +66,7 @@ pub mod markets {
             .text()
             .unwrap();
 
-        res
+        let res_dict: serde_json::Value = serde_json::from_str(&res)?;
+        Ok(res_dict)
     }
 }
