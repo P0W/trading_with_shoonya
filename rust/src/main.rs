@@ -4,6 +4,7 @@ use shoonya::auth::auth::Auth;
 use shoonya::markets::markets::{get_indices, get_quote};
 use shoonya::orders::orders::get_order_book;
 
+use clap::Parser;
 use log::*;
 
 mod logger;
@@ -38,7 +39,7 @@ fn build_indices_map(auth: &Auth) -> std::collections::HashMap<String, String> {
     result
 }
 
-fn get_straddle_strikes(auth: &Auth, index: &str) {
+fn get_straddle_strikes(auth: &Auth, index: &str) -> serde_json::Value {
     // get the config file
     let config_file = String::from("./common/config.json");
     let config = load_config(&config_file);
@@ -66,40 +67,111 @@ fn get_straddle_strikes(auth: &Auth, index: &str) {
     let (scrip_data, expiry_date) = read_txt_file_as_csv(&file_name, &config_file, &index);
 
     let index_quote = get_quote(&auth, &Exchange::NSE, index_token);
-    match index_quote {
-        Ok(result) if result["stat"] == "Ok" => {
-            let ltp = result["lp"].as_str().unwrap();
-            // convert ltp to f64
-            let ltp = ltp.parse::<f64>().unwrap();
-            // round to nerest config["INDICES_ROUNDING"][index]
-            let rounding = config["INDICES_ROUNDING"][index].as_f64().unwrap();
-            let rounded_ltp = (ltp / rounding).round() * rounding;
+    let rounding = config["INDICES_ROUNDING"][index].as_f64().unwrap();
+    let rounded_ltp = (index_quote / rounding).round() * rounding;
 
-            info!("Index LTP: {}", ltp);
+    let (ce_code, ce_symbol) = get_strike_info(&scrip_data, &expiry_date, rounded_ltp, "CE");
+    let (pe_code, pe_symbol) = get_strike_info(&scrip_data, &expiry_date, rounded_ltp, "PE");
 
-            let (token_ce, trading_symbol_ce) =
-                get_strike_info(&scrip_data, &expiry_date, rounded_ltp, "CE");
-            let (token_pe, trading_symbol_pe) =
-                get_strike_info(&scrip_data, &expiry_date, rounded_ltp, "PE");
+    let ce_quote = get_quote(&auth, &Exchange::NFO, &ce_code);
+    let pe_quote = get_quote(&auth, &Exchange::NFO, &pe_code);
 
-            info!("CE: {} {} {}", token_ce, trading_symbol_ce, rounded_ltp);
-            info!("PE: {} {} {}", token_pe, trading_symbol_pe, rounded_ltp);
-        }
-        Err(e) => {
-            info!("Error: {}", e);
-        }
-        _ => {
-            info!("Error: {}", "Unknown error");
-        }
-    }
+    let straddle_preimum = ce_quote + pe_quote;
+    let otm_strike_ce = rounded_ltp + straddle_preimum;
+    let otm_strike_pe = rounded_ltp - straddle_preimum;
+    // Round the OTM strikes to the nearest strike price
+    let otm_strike_ce = (otm_strike_ce / rounding).round() * rounding;
+    let otm_strike_pe = (otm_strike_pe / rounding).round() * rounding;
+
+    let (ce_code_sl, ce_symbol_sl) =
+        get_strike_info(&scrip_data, &expiry_date, otm_strike_ce, "CE");
+    let (pe_code_sl, pe_symbol_sl) =
+        get_strike_info(&scrip_data, &expiry_date, otm_strike_pe, "PE");
+
+    let ce_quote_sl = get_quote(&auth, &Exchange::NFO, &ce_code_sl);
+    let pe_quote_sl = get_quote(&auth, &Exchange::NFO, &pe_code_sl);
+
+    // create a json object
+    let result = serde_json::json!({
+        "ce_code": ce_code,
+        "ce_ltp": ce_quote,
+        "pe_code": pe_code,
+        "pe_ltp": pe_quote,
+        "ce_symbol": ce_symbol,
+        "pe_symbol": pe_symbol,
+        "ce_code_sl": ce_code_sl,
+        "ce_ltp_sl": ce_quote_sl,
+        "pe_code_sl": pe_code_sl,
+        "pe_ltp_sl": pe_quote_sl,
+        "ce_symbol_sl": ce_symbol_sl,
+        "pe_symbol_sl": pe_symbol_sl,
+    });
+    result
+}
+
+/// Shoonya Trading Bot
+#[derive(clap::Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    /// Force login
+    #[clap(short, long)]
+    force: bool,
+
+    /// Index to trade
+    #[clap(short, long, default_value = "BANKNIFTY")]
+    index: String,
+
+    /// Quantity to trade
+    #[clap(short, long, default_value = "1")]
+    qty: u32,
+
+    /// Stop loss factor
+    #[clap(long, default_value = "30")]
+    sl_factor: u32,
+
+    /// Target profit
+    #[clap(long, default_value = "35")]
+    target: u32,
+
+    /// Log level
+    #[clap(long, default_value = "INFO")]
+    log_level: String,
+
+    /// Show strikes only and exit
+    #[clap(short, long)]
+    show_strikes: bool,
+
+    /// PnL display interval in seconds
+    #[clap(long, default_value = "5")]
+    pnl_display_interval: u32,
+
+    /// Target MTM profit
+    #[clap(long, default_value = "1000")]
+    target_mtm: u32,
+
+    /// Book profit percent of premium left
+    #[clap(long, default_value = "50")]
+    book_profit: u32,
+
+    /// Credentials file
+    #[clap(short, long, default_value = "../cred.yml")]
+    credentials_file: String,
 }
 
 fn main() {
-    logger::init_logger("shoonya_rust", log::LevelFilter::Debug);
+    let args = Cli::parse();
+
+    let log_level = match args.log_level.as_str() {
+        "INFO" => log::LevelFilter::Info,
+        "DEBUG" => log::LevelFilter::Debug,
+        _ => log::LevelFilter::Info,
+    };
+
+    logger::init_logger("shoonya_rust", log_level);
 
     let mut auth = Auth::new();
 
-    auth.login("../cred.yml");
+    auth.login(args.credentials_file.as_str());
 
     let order_book = get_order_book(&auth);
 
@@ -119,7 +191,6 @@ fn main() {
         info!("{}: {}", idxname, token);
     }
 
-    download_scrip(&Exchange::NFO);
-
-    get_straddle_strikes(&auth, "BANKNIFTY");
+    let straddle_strikes = get_straddle_strikes(&auth, args.index.as_str());
+    info!("Straddle strikes: {}", straddle_strikes);
 }

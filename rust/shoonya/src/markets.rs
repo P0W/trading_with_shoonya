@@ -46,7 +46,7 @@ pub mod markets {
         Ok(res_dict)
     }
 
-    pub fn get_quote(auth: &crate::auth::auth::Auth, exchange: &Exchange, token: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    pub fn get_quote(auth: &crate::auth::auth::Auth, exchange: &Exchange, token: &str) -> f64 {
         let values = json!({
             "ordersource": "API",
             "exch": get_exchange_str(exchange),
@@ -66,7 +66,25 @@ pub mod markets {
             .text()
             .unwrap();
 
-        let res_dict: serde_json::Value = serde_json::from_str(&res)?;
-        Ok(res_dict)
+        let res_dict: serde_json::Value = serde_json::from_str(&res).unwrap();
+
+        if let Some(obj) = res_dict.as_object() {
+            if obj.contains_key("stat") {
+                // "stat" is present in the response
+                if obj["stat"] == "Ok" {
+                    // "stat" is "Ok"
+                    let lp: f64 = obj["lp"].as_str().unwrap().parse().unwrap();
+                    return lp;
+
+                } else {
+                    // "stat" is not "Ok"
+                    return -9999.0;
+                }
+            } else {
+                // "stat" is not present in the response
+                return  -9999.0;
+            }
+        }
+        -9999.0
     }
 }
