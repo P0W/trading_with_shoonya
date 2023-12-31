@@ -1,8 +1,8 @@
-#[allow(dead_code)]
 pub mod markets {
 
     use crate::urls::urls::{GETQUOTES, GET_INDICES_LIST, HOST};
     use serde_json::json;
+    use common::utils::utils::{Exchange, get_exchange_str};
 
     fn _get_payload(susertoken: &str, values: &serde_json::Value) -> String {
         let payload = format!("jData={}&jKey={}", values.to_string(), susertoken);
@@ -12,11 +12,11 @@ pub mod markets {
 
     pub fn get_indices(
         auth: &crate::auth::auth::Auth,
-        exchange: &str,
+        exchange: &Exchange,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         let values = json!({
             "ordersource": "API",
-            "exch": exchange,
+            "exch": get_exchange_str(exchange),
             "uid": auth.username,
         });
 
@@ -46,10 +46,10 @@ pub mod markets {
         Ok(res_dict)
     }
 
-    pub fn get_quote(auth: &crate::auth::auth::Auth, exchange: &str, token: &str) -> String {
+    pub fn get_quote(auth: &crate::auth::auth::Auth, exchange: &Exchange, token: &str) -> String {
         let values = json!({
             "ordersource": "API",
-            "exch": exchange,
+            "exch": get_exchange_str(exchange),
             "uid": auth.username,
             "token": token,
         });

@@ -6,16 +6,10 @@ pub mod scrips {
     use std::io;
     use std::path::Path;
     use zip::read::ZipArchive;
-    pub enum Exchange {
-        NSE = 0,
-        NFO = 1,
-        CDS = 2,
-        MCX = 3,
-        BSE = 4,
-        BFO = 5,
-    }
+    use common::utils::utils::{Exchange, get_exchange_str};
+    
 
-    const DOWNLOAD_PATH: &str = "./downloads";
+    pub const DOWNLOAD_PATH: &str = "./downloads";
 
     pub fn download_scrip(exchange: &Exchange) {
         let url = match exchange {
@@ -31,14 +25,7 @@ pub mod scrips {
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
         // convert exchange to string
-        let exchange = match exchange {
-            Exchange::NSE => "NSE",
-            Exchange::NFO => "NFO",
-            Exchange::CDS => "CDS",
-            Exchange::MCX => "MCX",
-            Exchange::BSE => "BSE",
-            Exchange::BFO => "BFO",
-        };
+        let exchange = get_exchange_str (&exchange);
 
         let download_file: String = format!("{}/{}_symbols_{}.txt", DOWNLOAD_PATH, exchange, today);
 
@@ -78,5 +65,23 @@ pub mod scrips {
                 std::io::copy(&mut file, &mut outfile).unwrap();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common::utils::utils::Exchange;
+
+    use super::*;
+    use crate::scrips::download_scrip;
+    use std::path::Path;
+
+    #[test]
+    fn it_works() {
+        download_scrip(&Exchange::BFO);
+        // assert file exists
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let file = format!("{}/{}_symbols_{}.txt", scrips::DOWNLOAD_PATH, "BFO", today);
+        assert!(Path::new(&file).exists());
     }
 }
