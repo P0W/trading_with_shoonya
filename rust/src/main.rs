@@ -46,35 +46,42 @@ fn get_straddle_strikes(auth: &Auth, index: &str) -> serde_json::Value {
     let index_token: &str = config["INDICES_TOKEN"][index].as_str().unwrap();
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let mut file_name = String::new();
+    let mut exchange: Exchange = Exchange::NSE;
+    let mut index_exchange = Exchange::NSE;
     match index {
         "NIFTY" | "BANKNIFTY" | "FINNIFTY" | "MIDCPNIFTY" => {
-            download_scrip(&Exchange::NFO);
+            exchange = Exchange::NFO;
+            index_exchange = Exchange::NSE;
             file_name = format!("./downloads/NFO_symbols_{}.txt", today);
         }
         "SENSEX" | "BANKEX" => {
-            download_scrip(&Exchange::BFO);
+            exchange = Exchange::BFO;
+            index_exchange = Exchange::BSE;
             file_name = format!("./downloads/BFO_symbols_{}.txt", today);
         }
         "CRUDEOIL" | "GOLD" | "SILVER" => {
-            download_scrip(&Exchange::MCX);
+            exchange = Exchange::MCX;
+            index_exchange = Exchange::MCX;
             file_name = format!("./downloads/MCX_symbols_{}.txt", today);
         }
         _ => {
             info!("Error: {}", "Unknown index");
+            std::process::exit(-1);
         }
     }
-
+    download_scrip(&exchange);
     let (scrip_data, expiry_date) = read_txt_file_as_csv(&file_name, &config_file, &index);
+    info!("Expiry date: {}", expiry_date);
 
-    let index_quote = get_quote(&auth, &Exchange::NSE, index_token);
+    let index_quote = get_quote(&auth, &index_exchange, index_token);
     let rounding = config["INDICES_ROUNDING"][index].as_f64().unwrap();
     let rounded_ltp = (index_quote / rounding).round() * rounding;
 
     let (ce_code, ce_symbol) = get_strike_info(&scrip_data, &expiry_date, rounded_ltp, "CE");
     let (pe_code, pe_symbol) = get_strike_info(&scrip_data, &expiry_date, rounded_ltp, "PE");
 
-    let ce_quote = get_quote(&auth, &Exchange::NFO, &ce_code);
-    let pe_quote = get_quote(&auth, &Exchange::NFO, &pe_code);
+    let ce_quote = get_quote(&auth, &exchange, &ce_code);
+    let pe_quote = get_quote(&auth, &exchange, &pe_code);
 
     let straddle_preimum = ce_quote + pe_quote;
     let otm_strike_ce = rounded_ltp + straddle_preimum;
@@ -83,28 +90,40 @@ fn get_straddle_strikes(auth: &Auth, index: &str) -> serde_json::Value {
     let otm_strike_ce = (otm_strike_ce / rounding).round() * rounding;
     let otm_strike_pe = (otm_strike_pe / rounding).round() * rounding;
 
+    // check if the OTM strikes are same as the rounded_ltp
+    if otm_strike_ce == rounded_ltp || otm_strike_pe == rounded_ltp {
+        error!("Cannot do the iron fly strategy, exiting!");
+        std::process::exit(-1);
+    }
+
     let (ce_code_sl, ce_symbol_sl) =
         get_strike_info(&scrip_data, &expiry_date, otm_strike_ce, "CE");
     let (pe_code_sl, pe_symbol_sl) =
         get_strike_info(&scrip_data, &expiry_date, otm_strike_pe, "PE");
 
-    let ce_quote_sl = get_quote(&auth, &Exchange::NFO, &ce_code_sl);
-    let pe_quote_sl = get_quote(&auth, &Exchange::NFO, &pe_code_sl);
+    let ce_quote_sl = get_quote(&auth, &exchange, &ce_code_sl);
+    let pe_quote_sl = get_quote(&auth, &exchange, &pe_code_sl);
+
+    // max diff between ce_strike and otm_strike_ce and pe_strike and otm_strike_pe
+    let max_diff = (otm_strike_ce - rounded_ltp)
+        .abs()
+        .max((otm_strike_pe - rounded_ltp).abs());
 
     // create a json object
     let result = serde_json::json!({
         "ce_code": ce_code,
-        "ce_ltp": ce_quote,
         "pe_code": pe_code,
-        "pe_ltp": pe_quote,
         "ce_symbol": ce_symbol,
         "pe_symbol": pe_symbol,
+        "ce_ltp": ce_quote,
+        "pe_ltp": pe_quote,
         "ce_code_sl": ce_code_sl,
-        "ce_ltp_sl": ce_quote_sl,
         "pe_code_sl": pe_code_sl,
-        "pe_ltp_sl": pe_quote_sl,
         "ce_symbol_sl": ce_symbol_sl,
         "pe_symbol_sl": pe_symbol_sl,
+        "ce_ltp_sl": ce_quote_sl,
+        "pe_ltp_sl": pe_quote_sl,
+        "max_diff": max_diff,
     });
     result
 }
@@ -134,7 +153,7 @@ struct Cli {
     target: u32,
 
     /// Log level
-    #[clap(long, default_value = "INFO")]
+    #[clap(long, default_value = "DEBUG")]
     log_level: String,
 
     /// Show strikes only and exit
@@ -164,6 +183,9 @@ fn main() {
     let log_level = match args.log_level.as_str() {
         "INFO" => log::LevelFilter::Info,
         "DEBUG" => log::LevelFilter::Debug,
+        "WARN" => log::LevelFilter::Warn,
+        "ERROR" => log::LevelFilter::Error,
+        "NONE" => log::LevelFilter::Off,
         _ => log::LevelFilter::Info,
     };
 
@@ -171,7 +193,7 @@ fn main() {
 
     let mut auth = Auth::new();
 
-    auth.login(args.credentials_file.as_str());
+    auth.login(args.credentials_file.as_str(), args.force);
 
     let order_book = get_order_book(&auth);
 
@@ -192,5 +214,8 @@ fn main() {
     }
 
     let straddle_strikes = get_straddle_strikes(&auth, args.index.as_str());
-    info!("Straddle strikes: {}", straddle_strikes);
+    info!(
+        "Straddle strikes: {}",
+        pretty_print_json(&straddle_strikes, 3)
+    );
 }

@@ -2,7 +2,7 @@ pub mod markets {
 
     use crate::urls::urls::{GETQUOTES, GET_INDICES_LIST, HOST};
     use serde_json::json;
-    use common::utils::utils::{Exchange, get_exchange_str};
+    use common::utils::utils::{Exchange, get_exchange_str, pretty_print_json};
 
     fn _get_payload(susertoken: &str, values: &serde_json::Value) -> String {
         let payload = format!("jData={}&jKey={}", values.to_string(), susertoken);
@@ -67,13 +67,15 @@ pub mod markets {
             .unwrap();
 
         let res_dict: serde_json::Value = serde_json::from_str(&res).unwrap();
-
         if let Some(obj) = res_dict.as_object() {
             if obj.contains_key("stat") {
                 // "stat" is present in the response
                 if obj["stat"] == "Ok" {
                     // "stat" is "Ok"
-                    let lp: f64 = obj["lp"].as_str().unwrap().parse().unwrap();
+                    let lp: f64 = obj["lp"].as_str().unwrap().parse().unwrap_or_else(|_| {
+                        log::error!("Error: {}", pretty_print_json(&res_dict, 2));
+                        -9999.0
+                    });
                     return lp;
 
                 } else {

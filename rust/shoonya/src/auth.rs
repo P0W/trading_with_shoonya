@@ -14,9 +14,9 @@ pub mod auth {
     }
 
     impl Auth {
-        pub fn login(&mut self, file_name: &str) {
+        pub fn login(&mut self, file_name: &str, force_login: bool) {
             const REDIS_URL: &str = "redis://127.0.0.1/";
-            const TOKEN: &str = "shhonya_rust_token";
+            const TOKEN: &str = "access_token_shoonya";
 
             let redis_client = redis::Client::open(REDIS_URL).unwrap();
             let mut con = redis_client.get_connection().unwrap();
@@ -25,18 +25,19 @@ pub mod auth {
             let file = std::fs::File::open(file_name).unwrap();
             let creds: serde_json::Value = serde_yaml::from_reader(file).unwrap();
             match super_token {
-                Ok(token) => {
+                Ok(token) if force_login == false => {
                     debug!("Token found in cache");
                     let userid = creds["user"].as_str().unwrap();
                     let password = creds["pwd"].as_str().unwrap();
                     self.set_session(userid, password, token.as_str());
                 }
-                Err(_) => {
+                _ => {
                     debug!("Token not found in cache");
                     // login and get the token
                     let creds = self.get_creds(creds).unwrap();
                     let token = creds["susertoken"].as_str().unwrap().to_string();
-                    let _: () = con.set(TOKEN, token).unwrap();
+                    // set the token in redis with expiry of 2 hours
+                    let _: () = con.set_ex(TOKEN, token, 7200).unwrap();
                 }
             }
         }

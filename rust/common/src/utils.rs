@@ -20,6 +20,17 @@ pub mod utils {
         }
     }
 
+    pub fn get_index(trading_symbol: &str) -> String {
+        let mut result = String::new();
+        for (i, c) in trading_symbol.chars().enumerate() {
+            if c.is_digit(10) {
+                result = trading_symbol[..i].to_string();
+                break;
+            }
+        }
+        result
+    }
+
     pub fn load_config(file_name: &str) -> serde_json::Value {
         // file is is common/config.json
         let contents = std::fs::read_to_string(file_name).unwrap();
@@ -101,6 +112,34 @@ pub mod utils {
             }
         }
         (token, trading_symbol)
+    }
+
+    pub fn pretty_print_json(json: &serde_json::Value, indent: usize) -> String {
+        let mut result = String::new();
+        match json {
+            serde_json::Value::Null => result.push_str("null"),
+            serde_json::Value::Bool(b) => result.push_str(&b.to_string()),
+            serde_json::Value::Number(n) => result.push_str(&n.to_string()),
+            serde_json::Value::String(s) => result.push_str(&s.to_string()),
+            serde_json::Value::Array(a) => {
+                result.push_str("[\n");
+                for item in a.iter() {
+                    result.push_str(&pretty_print_json(item, indent + 1));
+                    result.push_str(",\n");
+                }
+                result.push_str("]");
+            }
+            serde_json::Value::Object(o) => {
+                result.push_str("{\n");
+                for (key, value) in o.iter() {
+                    result.push_str(&format!("{:indent$}{}: ", "", key, indent = indent + 1));
+                    result.push_str(&pretty_print_json(value, indent + 1));
+                    result.push_str(",\n");
+                }
+                result.push_str("}");
+            }
+        }
+        result
     }
 }
 
