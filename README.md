@@ -6,9 +6,13 @@ This project is a trading bot built with Python. It uses the `shoonya_transactio
 
 It works (and tested) with NIFTY, BANKNIFTY, FINNIFTY, SENSEX, BANKEX, MIDCPNIFTY, CRUDEOIL options.
 
+---
+
 ```
-usage: shoonya_transaction.py [-h] [--force] --index {NIFTY,BANKNIFTY,FINNIFTY,MIDCPNIFTY,SENSEX,BANKEX,CRUDEOIL} --qty QTY [--sl_factor SL_FACTOR] [--target TARGET] [--log-level {INFO,DEBUG}]
-                              [--show-strikes] [--pnl-display-interval PNL_DISPLAY_INTERVAL] [--target-mtm TARGET_MTM] [--book-profit BOOK_PROFIT] [--cred-file CRED_FILE] [--instance-id INSTANCE_ID]   
+usage: shoonya_transaction.py [-h] [--force] --index {NIFTY,BANKNIFTY,FINNIFTY,MIDCPNIFTY,SENSEX,BANKEX,CRUDEOIL}
+                              --qty QTY [--sl_factor SL_FACTOR] [--target TARGET] [--log-level {INFO,DEBUG}]
+                              [--show-strikes] [--pnl-display-interval PNL_DISPLAY_INTERVAL] [--target-mtm TARGET_MTM]
+                              [--book-profit BOOK_PROFIT] [--cred-file CRED_FILE] [--instance-id INSTANCE_ID]   
 
 Straddle orders for NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY and USDINR
 
@@ -44,14 +48,14 @@ To install the project, follow these steps:
 3. Install the required Python packages, typically in a virtual environment
 4. Note: Requires docker runtime to kick off redis and postgresql containers
 5. Create a `cred.yml` with following entries grabbed from shoonya API integration page
-
+   ```
     user    : 'your-userid'
     pwd     : 'your-password'
     vc      : 'your-userid-suffixed-with _U'
     apikey  : 'your-api-key'
     imei    : 'random-text'
     totp_pin: 'your-totp-seceret-pin-obtained-during-setup'
-
+   ```
 ```bash
     python -m venv .
     scripts\activate
@@ -59,7 +63,9 @@ To install the project, follow these steps:
     pip install -r requirements.txt
     docker-compose up -d
 ```
-4. Sample runs
+---
+
+Sample runs
 
 ```bash
    python .\shoonya_transaction.py --show-strikes --qty 500 --index NIFTY
