@@ -2,9 +2,9 @@
 
 ## Description
 
-This project is a trading bot built with Python. It uses the `shoonya.py` script to place a short straddle and then monitors the live MTM
+This project is a trading bot built with Python. It uses the `shoonya_transaction.py` script to place a short straddle, with OTM stop losses and then monitors the live MTM
 
-It works (and tested) with NIFTY, BANKNIFTY, FINNIFTY, SENSEX, BANKEX, MIDCPNIFTY options.
+It works (and tested) with NIFTY, BANKNIFTY, FINNIFTY, SENSEX, BANKEX, MIDCPNIFTY, CRUDEOIL options.
 
 ```
 Straddle orders for NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY and USDINR
@@ -34,11 +34,15 @@ To install the project, follow these steps:
 
 1. Clone the repository
 2. Navigate to the project directory and cd into transactional
-3. Install the required Python packages, typically in a virtual environment,
+3. Install the required Python packages, typically in a virtual environment
+4. Note: Requires docker runtime to kick off redis and postgresql containers
 
 ```bash
     python -m venv .
+    scripts\activate
+    cd transactional
     pip install -r requirements.txt
+    docker-compose up -d
 ```
 4. Sample runs
 
