@@ -271,7 +271,7 @@ def main(args):
         * sl_factor
         * (float(strikes_data["ce_sl_ltp"]) + float(strikes_data["pe_sl_ltp"]))
     )
-    max_loss = strikes_data["max_strike_diff"] * qty + (premium - premium_lost)
+    max_loss = (premium - premium_lost) - strikes_data["max_strike_diff"] * qty
     if target_mtm == -1:
         logging.info("Target MTM not provided, calculating from premium")
         target_mtm = premium * target

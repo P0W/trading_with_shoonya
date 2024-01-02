@@ -335,7 +335,7 @@ def parse_args():
             "MIDCPNIFTY",
             "SENSEX",
             "BANKEX",
-            "CRUDEOIL"
+            "CRUDEOIL",
         ],
     )
     args.add_argument("--qty", required=True, type=int, help="Quantity to trade")
@@ -398,13 +398,16 @@ def set_module_logger(module_name, level=logging.CRITICAL):
     """
     logging.getLogger(module_name).setLevel(level)
 
+
 ## Create a decorator to invoke the function only if X seconds have passed
 ## since the last invocation
 def delay_decorator(delay):
     """Decorator that ensures function can't be called more often than delay seconds."""
+
     def decorator(func):
         # Store the time the function was last called
         last_called = [0]
+
         @wraps(func)
         def wrapper(*args, **kwargs):
             # Get the current time
@@ -417,8 +420,11 @@ def delay_decorator(delay):
                 return result
             # If not enough time has passed, return None
             return None
+
         return wrapper
+
     return decorator
+
 
 def get_instance_id():
     """
@@ -428,11 +434,13 @@ def get_instance_id():
     timestamp = int(time.time())
     return f"{process_id}_{timestamp}"
 
-def get_remarks(instance_id:str, msg:str):
+
+def get_remarks(instance_id: str, msg: str):
     """
     Get the remarks suffix
     """
     return f"{instance_id}|{msg}"
+
 
 refresh_indices_code()
 set_module_logger("urllib3", logging.CRITICAL)
@@ -445,6 +453,7 @@ set_module_logger("NorenRestApiPy.NorenApi", logging.DEBUG)
 if __name__ == "__main__":
     configure_logger(prefix_log_file="test", log_level=logging.DEBUG)
     from client_shoonya import ShoonyaApiPy
+
     api = ShoonyaApiPy()
-    #strikes_data = get_staddle_strike(api, "CRUDEOIL")
-    #logging.info(strikes_data)
+    # strikes_data = get_staddle_strike(api, "CRUDEOIL")
+    # logging.info(strikes_data)
