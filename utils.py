@@ -15,6 +15,7 @@ from functools import wraps
 import colorlog
 import pandas as pd
 import requests
+
 from const import EXCHANGE
 from const import INDICES_ROUNDING
 from const import INDICES_TOKEN
@@ -102,6 +103,8 @@ def configure_logger(log_level, prefix_log_file: str = "shoonya_daily_short"):
         ],
         level=log_level,
     )
+    ## disable NorenApi logger
+    set_module_logger("NorenRestApiPy.NorenApi", log_level)
 
     return logging.getLogger(prefix_log_file)
 
@@ -334,7 +337,7 @@ def get_staddle_strike(shoonya_api, symbol_index, qty=-1):
         span_margin = None
         response = shoonya_api.span_calculator("N/A", positions=positions)
         if response["stat"] != "Ok":
-            logger.warn("Error in span calculation: %s", response["emsg"])
+            logger.warning("Error in span calculation: %s", response["emsg"])
         else:
             span_margin = response["span"]
         return {
@@ -487,13 +490,30 @@ set_module_logger("urllib3", logging.CRITICAL)
 set_module_logger("urllib3.connectionpool", logging.CRITICAL)
 ## disable websocket logger
 set_module_logger("websocket", logging.ERROR)
-## disable NorenApi logger
-set_module_logger("NorenRestApiPy.NorenApi", logging.DEBUG)
+
 
 if __name__ == "__main__":
     configure_logger(prefix_log_file="test", log_level=logging.DEBUG)
     from client_shoonya import ShoonyaApiPy
 
     api = ShoonyaApiPy()
-    # strikes_data = get_staddle_strike(api, "CRUDEOIL")
-    # logging.info(strikes_data)
+    positions_for_span = [
+        {
+            "prd": "H",
+            "exch": "BFO",
+            "instname": "OPTSTK",
+            "symname": "BLKIOPT",
+            "exd": "11-JAN-2024",
+            "optt": "CE",
+            "strprc": "2300",
+            "buyqty": 0,
+            "sellqty": "300",
+            "netqty": "-300",
+        }
+    ]
+    import json
+
+    span_response = api.span_calculator("N/A", positions=positions_for_span)
+    logger.info(
+        json.dumps(span_response, indent=3)
+    )  ## Error in span calculation for BFO, NFO works

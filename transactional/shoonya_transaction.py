@@ -142,7 +142,11 @@ class ShoonyaTransaction:
         """
         Check if the day is over or order queue is empty
         """
-        return not self.order_queue or self.transaction_manager.day_over()
+        return (
+            not self.order_queue
+            or self.transaction_manager.day_over()
+            or self._both_legs_rejected()
+        )
 
     def cancel_on_book_profit(
         self,
@@ -192,6 +196,21 @@ class ShoonyaTransaction:
     def display_order_queue(self):
         """Display order queue"""
         self.logger.debug("Order queue: %s", self.order_queue)
+
+    @delay_decorator(delay=5)
+    def _both_legs_rejected(self):
+        """Close the transaction if any leg is rejected"""
+        result = True
+        for item in ["ce", "pe"]:
+            message = get_remarks(instance_id=self.instance_id, msg=f"{item}_straddle")
+            norenordno, _ = self.transaction_manager.get_for_remarks(
+                message, OrderStatus.REJECTED
+            )
+            if not norenordno:
+                self.logger.info("Closing transaction as %s is rejected", message)
+                result = False
+                break
+        return result
 
     def _square_off(self):
         """Square off all positions"""
@@ -414,6 +433,7 @@ def main(args):
                 remarks=f"{subscribe_msg}_unsubscribe",
                 parent_remarks=subscribe_msg,
             )
+
             shoonya_transaction.display_order_queue()
 
 
