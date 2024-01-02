@@ -7,12 +7,15 @@ This project is a trading bot built with Python. It uses the `shoonya_transactio
 It works (and tested) with NIFTY, BANKNIFTY, FINNIFTY, SENSEX, BANKEX, MIDCPNIFTY, CRUDEOIL options.
 
 ```
+usage: shoonya_transaction.py [-h] [--force] --index {NIFTY,BANKNIFTY,FINNIFTY,MIDCPNIFTY,SENSEX,BANKEX,CRUDEOIL} --qty QTY [--sl_factor SL_FACTOR] [--target TARGET] [--log-level {INFO,DEBUG}]
+                              [--show-strikes] [--pnl-display-interval PNL_DISPLAY_INTERVAL] [--target-mtm TARGET_MTM] [--book-profit BOOK_PROFIT] [--cred-file CRED_FILE] [--instance-id INSTANCE_ID]   
+
 Straddle orders for NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY and USDINR
 
 options:
   -h, --help            show this help message and exit
   --force               Force login
-  --index {NIFTY,BANKNIFTY,FINNIFTY,MIDCPNIFTY,SENSEX,BANKEX}
+  --index {NIFTY,BANKNIFTY,FINNIFTY,MIDCPNIFTY,SENSEX,BANKEX,CRUDEOIL}
   --qty QTY             Quantity to trade
   --sl_factor SL_FACTOR
                         Stop loss factor | default 30 percent on individual leg
@@ -26,6 +29,10 @@ options:
                         Target MTM profit
   --book-profit BOOK_PROFIT
                         Book profit percent of premium left
+  --cred-file CRED_FILE
+                        Credential file
+  --instance-id INSTANCE_ID
+                        Instance id for multiple instance of the scripts
 ```
 
 ## Installation
@@ -36,6 +43,14 @@ To install the project, follow these steps:
 2. Navigate to the project directory and cd into transactional
 3. Install the required Python packages, typically in a virtual environment
 4. Note: Requires docker runtime to kick off redis and postgresql containers
+5. Create a `cred.yml` with following entries grabbed from shoonya API integration page
+
+    user    : 'your-userid'
+    pwd     : 'your-password'
+    vc      : 'your-userid-suffixed-with _U'
+    apikey  : 'your-api-key'
+    imei    : 'random-text'
+    totp_pin: 'your-totp-seceret-pin-obtained-during-setup'
 
 ```bash
     python -m venv .
@@ -48,7 +63,8 @@ To install the project, follow these steps:
 
 ```bash
    python .\shoonya_transaction.py --show-strikes --qty 500 --index NIFTY
-   python .\shoonya_transaction.py --qty 75 --index BANKNIFTY --target 0.25 
+   python .\shoonya_transaction.py --qty 75 --index BANKNIFTY --target 0.25
+   python .\shoonya_transaction.py --cred-file ..\cred.yml --index FINNIFTY --qty 40 --target-mtm 221.00 --show-strikes
 ```
 
 **NOTE**: The `shoonya.py` is in decrecation mode, however one can look into the event based algo trade bot idea.
