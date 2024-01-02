@@ -5,11 +5,13 @@ import datetime
 import json
 import logging
 import sys
-import threading
-from typing import Any, List
+from contextlib import contextmanager
+from typing import Any
 from typing import Dict
+from typing import List
 
 import psycopg2.extras
+from psycopg2.pool import ThreadedConnectionPool, PoolError
 from const import OrderStatus
 from utils import full_stack
 
@@ -21,13 +23,17 @@ class TransactionManager(order_manager.OrderManager):
     Transaction manager class
     """
 
+    MIN_CONNECTIONS = (
+        3  ## minimum number of connections in the pool, these are created instantly
+    )
+    MAX_CONNECTIONS = 10  ## maximum number of connections in the pool
+
     def __init__(self, api_object: Any, config: Dict):
         """
         Initialize the transaction manager
         """
         super().__init__(api_object, config)
         self.logger = logging.getLogger(__name__)
-        self.lock = threading.Lock()
         ## create a connection to the database
         conn_string = f"user={config['user']} \
             password={config['password']} \
@@ -36,11 +42,36 @@ class TransactionManager(order_manager.OrderManager):
         self.logger.info("Connecting to database %s", conn_string)
         self.instance_id = config["instance_id"]
 
-        self.conn = psycopg2.connect(conn_string)
-        self.cursor = self.conn.cursor(cursor_factory=psycopg2.extras.NamedTupleCursor)
+        self.conn_pool = ThreadedConnectionPool(
+            TransactionManager.MIN_CONNECTIONS,
+            TransactionManager.MAX_CONNECTIONS,
+            conn_string,
+        )
+
+        # conn = psycopg2.connect(conn_string)
+        # cursor = conn.cursor(cursor_factory=psycopg2.extras.NamedTupleCursor)
         ## get the current unix utc_timestamp using datetime
         self.start_time = self._get_utc_timestamp()
         self._create_tables()
+
+    @contextmanager
+    def getcursor(self):
+        """Get a cursor from the connection pool"""
+        con = self.conn_pool.getconn()
+        try:
+            yield con.cursor(cursor_factory=psycopg2.extras.NamedTupleCursor)
+        except psycopg2.OperationalError as ex:
+            self.logger.error("OperationalError Exception: %s", ex)
+            ## stacktrace
+            self.logger.error(full_stack())
+            sys.exit(-1)
+        except PoolError as ex:
+            self.logger.error("PoolError Exception: %s", ex)
+            ## stacktrace
+            self.logger.error(full_stack())
+            sys.exit(-1)
+        finally:
+            self.conn_pool.putconn(con)
 
     def _get_utc_timestamp(self):
         """Get the current utc_timestamp"""
@@ -48,10 +79,10 @@ class TransactionManager(order_manager.OrderManager):
 
     def _create_tables(self):
         """Create a table transaction in the database"""
-        with self.lock:
+        with self.getcursor() as cursor:
             table_name = "transactions"
             self.logger.info("Creating table transactions")
-            self.cursor.execute(
+            cursor.execute(
                 f"""CREATE TABLE IF NOT EXISTS {table_name}
                 (norenordno TEXT PRIMARY KEY,
                 utc_timestamp TIMESTAMP,
@@ -66,7 +97,7 @@ class TransactionManager(order_manager.OrderManager):
             ## create a table liveltp schema : (symbolcode, ltp)
             table_name = "liveltp"
             self.logger.info("Creating table liveltp")
-            self.cursor.execute(
+            cursor.execute(
                 f"""CREATE TABLE IF NOT EXISTS {table_name}
                 (symbolcode TEXT PRIMARY KEY,
                 ltp REAL)"""
@@ -75,7 +106,7 @@ class TransactionManager(order_manager.OrderManager):
             ## create a table symbols schema : (symbolcode, exchange, tradingsymbol, instance)
             table_name = "symbols"
             self.logger.info("Creating table symbols")
-            self.cursor.execute(
+            cursor.execute(
                 f"""CREATE TABLE IF NOT EXISTS {table_name}
                 (symbolcode TEXT,
                 exchange TEXT,
@@ -83,8 +114,7 @@ class TransactionManager(order_manager.OrderManager):
                 instance TEXT,
                 PRIMARY KEY (symbolcode, instance))"""
             )
-
-            self.conn.commit()
+            cursor.connection.commit()
 
     def _check_for_self(self, remarks: str) -> bool:
         """
@@ -123,9 +153,9 @@ class TransactionManager(order_manager.OrderManager):
             "status": status,
             "instance": self.instance_id,
         }
-        with self.lock:
-            ## pylint: disable=line-too-long
-            self.cursor.execute(
+        ## pylint: disable=line-too-long
+        with self.getcursor() as cursor:
+            cursor.execute(
                 """INSERT INTO transactions
                 (norenordno, utc_timestamp, remarks, avgprice, qty, buysell, tradingsymbol, status, instance)
                 VALUES (%(norenordno)s, to_timestamp(%(utc_timestamp)s), %(remarks)s, %(avgprice)s, %(qty)s, %(buysell)s, %(tradingsymbol)s, %(status)s , %(instance)s)
@@ -141,7 +171,7 @@ class TransactionManager(order_manager.OrderManager):
                 """,
                 upsert_data,
             )
-            self.conn.commit()
+            cursor.connection.commit()
         self.logger.debug(
             "Upserting into table transactions: %s", json.dumps(upsert_data, indent=2)
         )
@@ -155,8 +185,8 @@ class TransactionManager(order_manager.OrderManager):
                 lp = float(tick_data["lp"])
                 tk = tick_data["tk"]
                 ## upsert into the table liveltp
-                with self.lock:
-                    self.cursor.execute(
+                with self.getcursor() as cursor:
+                    cursor.execute(
                         """INSERT INTO liveltp
                         (symbolcode, ltp)
                         VALUES (%(tk)s, %(lp)s)
@@ -165,7 +195,7 @@ class TransactionManager(order_manager.OrderManager):
                         """,
                         {"tk": tk, "lp": lp},
                     )
-                    self.conn.commit()
+                    cursor.connection.commit()
         except Exception as e:  ## pylint: disable=broad-except
             self.logger.error("Exception: %s", e)
             self.logger.error("Stack Trace : %s", full_stack())
@@ -188,11 +218,11 @@ class TransactionManager(order_manager.OrderManager):
             "tradingsymbol": tradingsymbol,
             "instance": self.instance_id,
         }
-        with self.lock:
-            self.logger.info(
-                "Upserting into table symbols %s", json.dumps(upsert_data, indent=2)
-            )
-            self.cursor.execute(
+        self.logger.info(
+            "Upserting into table symbols %s", json.dumps(upsert_data, indent=2)
+        )
+        with self.getcursor() as cursor:
+            cursor.execute(
                 """INSERT INTO symbols
                 (symbolcode, exchange, tradingsymbol, instance)
                 VALUES (%(symbolcode)s, %(exchange)s, %(tradingsymbol)s, %(instance)s)
@@ -202,7 +232,7 @@ class TransactionManager(order_manager.OrderManager):
                 """,
                 upsert_data,
             )
-            self.conn.commit()
+            cursor.connection.commit()
 
     def unsubscribe_symbols(self, symbol: Dict):
         """
@@ -213,19 +243,6 @@ class TransactionManager(order_manager.OrderManager):
         subscribe_code = f"{exchange}|{symbolcode}"
         self.unsubscribe(subscribe_code)
 
-        ## delete from the table symbols
-        ## Note: Don't delete from the table symbols,
-        ## to keep track of all the symbols and correctly calculate PnL
-        # with self.lock:
-        #     self.logger.info("Deleting from table symbols")
-        #     self.cursor.execute(
-        #         """DELETE FROM symbols
-        #         WHERE symbolcode=%s AND instance=%s
-        #         """,
-        #         (symbolcode, self.instance_id),
-        #     )
-        #     self.conn.commit()
-
     def get_for_remarks(
         self, remarks: str, expected: OrderStatus = None
     ) -> (str, OrderStatus):
@@ -234,20 +251,21 @@ class TransactionManager(order_manager.OrderManager):
         for utc_timestamp greater than start_time, otherwise None
         """
         response = None
-        with self.lock:
+        with self.getcursor() as cursor:
             try:
-                self.cursor.execute(
+                cursor.execute(
                     """SELECT norenordno, status
                     FROM transactions
                     WHERE remarks=%s AND instance=%s
                     """,
                     (remarks, self.instance_id),
                 )
-                response = self.cursor.fetchone()
+                response = cursor.fetchone()
             except psycopg2.OperationalError as ex:
                 self.logger.error("Exception: %s", ex)
                 ## stacktrace
                 self.logger.error(full_stack())
+
         if response is not None:
             norenordno = response.norenordno
             status = response.status
@@ -267,9 +285,9 @@ class TransactionManager(order_manager.OrderManager):
         Note: symbolcode is not tradingsymbol
         """
         rows = []
-        with self.lock:
-            try:
-                self.cursor.execute(
+        try:
+            with self.getcursor() as cursor:
+                cursor.execute(
                     """SELECT transactions.avgprice, transactions.qty, transactions.buysell, 
                             transactions.tradingsymbol, liveltp.ltp
                     FROM transactions
@@ -279,11 +297,11 @@ class TransactionManager(order_manager.OrderManager):
                     WHERE transactions.instance = %s""",
                     (self.instance_id,),
                 )
-                rows = self.cursor.fetchall()
-            except Exception as e:  ## pylint: disable=broad-exception-caught
-                self.logger.error("Failed to execute SQL query %s", e)
-                self.logger.error(full_stack())
-                return -999.999
+                rows = cursor.fetchall()
+        except Exception as e:  ## pylint: disable=broad-exception-caught
+            self.logger.error("Failed to execute SQL query %s", e)
+            self.logger.error(full_stack())
+            return -999.999
         total_pnl = 0
         msg = []
         for row in rows:
@@ -309,19 +327,19 @@ class TransactionManager(order_manager.OrderManager):
     def get_orders(self) -> List[Dict]:
         """Get all orders for this instance"""
         rows = []
-        with self.lock:
-            try:
-                self.cursor.execute(
+        try:
+            with self.getcursor() as cursor:
+                cursor.execute(
                     """SELECT norenordno, remarks, avgprice, qty, buysell, tradingsymbol, status
                     FROM transactions
                     WHERE instance = %s""",
                     (self.instance_id,),
                 )
-                rows = self.cursor.fetchall()
-            except Exception as e:  ## pylint: disable=broad-exception-caught
-                self.logger.error("Failed to execute SQL query %s", e)
-                self.logger.error(full_stack())
-                return []
+                rows = cursor.fetchall()
+        except Exception as e:  ## pylint: disable=broad-exception-caught
+            self.logger.error("Failed to execute SQL query %s", e)
+            self.logger.error(full_stack())
+            return []
         orders = []
         for row in rows:
             orders.append(
@@ -344,16 +362,16 @@ class TransactionManager(order_manager.OrderManager):
         ## change status to "COMPLETE" for all orders,
         ## check utc_timestamp > start_time, exeute after 15 seconds
         if self._get_utc_timestamp() - self.start_time > interval:
-            with self.lock:
-                self.logger.info("Updating status to COMPLETE")
-                self.cursor.execute(
+            self.logger.info("Updating status to COMPLETE")
+            with self.getcursor() as cursor:
+                cursor.execute(
                     """UPDATE transactions
                     SET status = %s
                     WHERE instance = %s
                     """,
                     (status.value, self.instance_id),
                 )
-                self.conn.commit()
+                cursor.connection.commit()
             self.logger.info("Test complete")
             return True
         return False
