@@ -236,7 +236,7 @@ def get_closest_expiry(symbol_index):
 
 
 ## pylint: disable=too-many-locals
-def get_staddle_strike(shoonya_api, symbol_index):
+def get_staddle_strike(shoonya_api, symbol_index, qty=-1):
     """
     Get the nearest strike for the index
     """
@@ -299,6 +299,44 @@ def get_staddle_strike(shoonya_api, symbol_index):
             abs(get_strike(df, ce_strike) - get_strike(df, ce_sl_strike)),
             abs(get_strike(df, pe_strike) - get_strike(df, pe_sl_strike)),
         )
+
+        ## get expiry date in 04-JAN-2024 format
+        expiry_date = expiry_date.strftime("%d-%b-%Y").upper()
+        if qty == -1:
+            qty = LOT_SIZE[symbol_index]
+
+        positions = [
+            {
+                "prd": "H",
+                "exch": EXCHANGE[symbol_index],
+                "instname": "OPTSTK",
+                "symname": symbol_index,
+                "exd": expiry_date,
+                "optt": "CE",
+                "strprc": f"{nearest}",
+                "buyqty": 0,
+                "sellqty": f"{qty}",
+                "netqty": f"{-qty}",
+            },
+            {
+                "prd": "H",
+                "exch": EXCHANGE[symbol_index],
+                "instname": "OPTSTK",
+                "symname": symbol_index,
+                "exd": expiry_date,
+                "optt": "PE",
+                "strprc": f"{nearest}",
+                "buyqty": 0,
+                "sellqty": f"{qty}",
+                "netqty": f"{-qty}",
+            },
+        ]
+        span_margin = None
+        response = shoonya_api.span_calculator("N/A", positions=positions)
+        if response["stat"] != "Ok":
+            logger.warn("Error in span calculation: %s", response["emsg"])
+        else:
+            span_margin = response["span"]
         return {
             "ce_code": str(ce_token),
             "pe_code": str(pe_token),
@@ -313,6 +351,8 @@ def get_staddle_strike(shoonya_api, symbol_index):
             "ce_sl_ltp": ce_sl_ltp,
             "pe_sl_ltp": pe_sl_ltp,
             "max_strike_diff": max_strike_diff,
+            "span_margin": span_margin,
+            "expiry_date": expiry_date,
         }
     return None
 

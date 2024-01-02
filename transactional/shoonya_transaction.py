@@ -263,7 +263,7 @@ def main(args):
     ## validate the quantity
     validate(qty, index)
 
-    strikes_data = get_staddle_strike(api, index)
+    strikes_data = get_staddle_strike(api, symbol_index=index, qty=args.qty)
 
     premium = qty * (float(strikes_data["ce_ltp"]) + float(strikes_data["pe_ltp"]))
     premium_lost = (
