@@ -48,6 +48,8 @@ To install the project, follow these steps:
 3. Install the required Python packages, typically in a virtual environment
 4. Note: Requires docker runtime to kick off redis and postgresql containers
 5. Create a `cred.yml` with following entries grabbed from shoonya API integration page
+   https://prism.shoonya.com/api
+   
    ```
     user    : 'your-userid'
     pwd     : 'your-password'
