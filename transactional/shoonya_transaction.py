@@ -207,9 +207,10 @@ class ShoonyaTransaction:
                 message, OrderStatus.REJECTED
             )
             if not norenordno:
-                self.logger.info("Closing transaction as %s is rejected", message)
                 result = False
                 break
+        if result:
+            self.logger.warning("Both legs rejected, closing transaction")
         return result
 
     def _square_off(self):
