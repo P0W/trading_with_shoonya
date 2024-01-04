@@ -460,20 +460,6 @@ def quick_test():
     logger.info("norenordno: %s | status: %s", n, s == OrderStatus.TRIGGER_PENDING)
 
 
-import ssl
-
-try:
-    _create_unverified_https_context = ssl._create_unverified_context
-    print("SSL Verified")
-except AttributeError:
-    # Legacy Python that doesn't verify HTTPS certificates by default
-    print("SSL Not Verified")
-    pass
-else:
-    # Handle target environment that doesn't support HTTPS verification
-    ssl._create_default_https_context = _create_unverified_https_context
-    print("Else SSL Verified")
-
 if __name__ == "__main__":
     main(parse_args())
     # quick_test()
