@@ -192,7 +192,7 @@ class ShoonyaTransaction:
         """Test function"""
         return self.transaction_manager.test(status, interval)
 
-    @delay_decorator(delay=30)
+    @delay_decorator(delay=60)
     def display_order_queue(self):
         """Display order queue"""
         self.logger.debug("Order queue: %s", self.order_queue)
