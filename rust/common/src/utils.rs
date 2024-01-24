@@ -93,6 +93,7 @@ pub mod utils {
 
     pub fn get_strike_info(
         data: &Vec<serde_json::Value>,
+        index: &str,
         expiry: &str,
         strike_price: f64,
         opt: &str,
@@ -104,8 +105,9 @@ pub mod utils {
             let sym = row["StrikePrice"].as_str().unwrap();
             let sym = sym.parse::<f64>().unwrap();
             let option_type = row["OptionType"].as_str().unwrap();
+            let idx_symb = row["Symbol"].as_str().unwrap();
 
-            if expiry_date == expiry && sym == strike_price && option_type == opt {
+            if idx_symb == index && expiry_date == expiry && sym == strike_price && option_type == opt {
                 token = row["Token"].as_str().unwrap().to_string();
                 trading_symbol = row["TradingSymbol"].as_str().unwrap().to_string();
                 break;
@@ -196,7 +198,7 @@ mod tests {
             "NIFTY",
         );
         assert_eq!(result[0]["Exchange"], "NFO");
-        let (token, trading_symbol) = get_strike_info(&result, &expiry_date, 21800.0, "CE");
+        let (token, trading_symbol) = get_strike_info(&result, "NIFTY", &expiry_date, 21800.0, "CE");
         assert_eq!(token, "42216");
         //
         assert_eq!(trading_symbol, "NIFTY04JAN24C21800");

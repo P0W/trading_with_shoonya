@@ -1,6 +1,6 @@
 pub mod markets {
 
-    use crate::urls::urls::{GETQUOTES, GET_INDICES_LIST, HOST};
+    use crate::{auth::auth::Auth, urls::urls::{GETQUOTES, GET_INDICES_LIST, HOST, OPTIONCHAIN}};
     use serde_json::json;
     use common::utils::utils::{Exchange, get_exchange_str, pretty_print_json};
 
@@ -10,18 +10,62 @@ pub mod markets {
         payload
     }
 
-    pub fn get_indices(
-        auth: &crate::auth::auth::Auth,
+    pub trait Markets {
+        fn get_quote(&self, _exchange: &Exchange, _token: &str) -> f64 { 0.0 }
+        fn get_indices(&self, _exchange: &Exchange) -> Result<serde_json::Value, Box<dyn std::error::Error>> { Ok(serde_json::Value::Null) }
+        fn get_option_chain(&self, exchange: &Exchange, tsym:&str, strike_price: f64) -> Result<serde_json::Value, Box<dyn std::error::Error>>;
+    }
+
+    impl Markets for Auth {
+        fn get_option_chain(&self, exchange: &Exchange, tsym:&str, strike_price: f64) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+            let values = json!({
+                "ordersource": "API",
+                "exch": get_exchange_str(exchange),
+                "uid": self.username,
+                "strprc": format!("{}", strike_price),
+                "cnt": "5",
+                "tsym": tsym
+            });
+
+            let url = format!("{}{}", HOST, OPTIONCHAIN);
+            let payload = _get_payload(&self.susertoken, &values);
+
+            let client = reqwest::blocking::Client::new();
+            let res: String = client.post(&url).body(payload).send()?.text()?;
+
+            let res_dict: serde_json::Value = serde_json::from_str(&res)?;
+            if let Some(obj) = res_dict.as_object() {
+                if obj.contains_key("stat") {
+                    // "stat" is present in the response
+                    if obj["stat"] == "Ok" {
+                        // "stat" is "Ok"
+                        return Ok(res_dict);
+                    } else {
+                        // "stat" is not "Ok"
+                        return Err(res_dict.to_string().into());
+                    }
+                } else {
+                    // "stat" is not present in the response
+                    return Ok(res_dict);
+                }
+            }
+
+            Ok(res_dict)
+        }
+  
+
+    fn get_indices(
+        &self,
         exchange: &Exchange,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         let values = json!({
             "ordersource": "API",
             "exch": get_exchange_str(exchange),
-            "uid": auth.username,
+            "uid": self.username,
         });
 
         let url = format!("{}{}", HOST, GET_INDICES_LIST);
-        let payload = _get_payload(&auth.susertoken, &values);
+        let payload = _get_payload(&self.susertoken, &values);
 
         let client = reqwest::blocking::Client::new();
         let res: String = client.post(&url).body(payload).send()?.text()?;
@@ -46,16 +90,16 @@ pub mod markets {
         Ok(res_dict)
     }
 
-    pub fn get_quote(auth: &crate::auth::auth::Auth, exchange: &Exchange, token: &str) -> f64 {
+    fn get_quote(&self, exchange: &Exchange, token: &str) -> f64 {
         let values = json!({
             "ordersource": "API",
             "exch": get_exchange_str(exchange),
-            "uid": auth.username,
+            "uid": self.username,
             "token": token,
         });
 
         let url = format!("{}{}", HOST, GETQUOTES);
-        let payload = _get_payload(&auth.susertoken, &values);
+        let payload = _get_payload(&self.susertoken, &values);
 
         let client = reqwest::blocking::Client::new();
         let res: String = client
@@ -89,4 +133,5 @@ pub mod markets {
         }
         -9999.0
     }
+}
 }

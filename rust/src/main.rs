@@ -1,7 +1,8 @@
+use clap::builder::Str;
 use common::utils::utils::*;
 use scrip_master::scrips::download_scrip;
 use shoonya::auth::auth::Auth;
-use shoonya::markets::markets::{get_indices, get_quote};
+use shoonya::markets::markets::Markets;
 use shoonya::orders::orders::get_order_book;
 
 use clap::Parser;
@@ -19,7 +20,7 @@ fn build_indices_map(auth: &Auth) -> std::collections::HashMap<String, String> {
         Exchange::MCX,
     ];
     for exchange in exchanges.iter() {
-        let indices = get_indices(&auth, exchange);
+        let indices = auth.get_indices(exchange);
         match indices {
             Ok(indices) => {
                 let values = indices["values"].as_array().unwrap();
@@ -39,15 +40,15 @@ fn build_indices_map(auth: &Auth) -> std::collections::HashMap<String, String> {
     result
 }
 
-fn get_straddle_strikes(auth: &Auth, index: &str) -> serde_json::Value {
+fn get_straddle_strikes(auth: &Auth, index: &str, closest_price: f64) -> serde_json::Value {
     // get the config file
     let config_file = String::from("./common/config.json");
     let config = load_config(&config_file);
     let index_token: &str = config["INDICES_TOKEN"][index].as_str().unwrap();
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let mut file_name = String::new();
-    let mut exchange: Exchange = Exchange::NSE;
-    let mut index_exchange = Exchange::NSE;
+    let file_name;
+    let exchange: Exchange;
+    let index_exchange;
     match index {
         "NIFTY" | "BANKNIFTY" | "FINNIFTY" | "MIDCPNIFTY" => {
             exchange = Exchange::NFO;
@@ -73,41 +74,109 @@ fn get_straddle_strikes(auth: &Auth, index: &str) -> serde_json::Value {
     let (scrip_data, expiry_date) = read_txt_file_as_csv(&file_name, &config_file, &index);
     info!("Expiry date: {}", expiry_date);
 
-    let index_quote = get_quote(&auth, &index_exchange, index_token);
+    let index_quote = auth.get_quote(&index_exchange, index_token);
     let rounding = config["INDICES_ROUNDING"][index].as_f64().unwrap();
-    let rounded_ltp = (index_quote / rounding).round() * rounding;
+    let rounded_strike = (index_quote / rounding).round() * rounding;
 
-    let (ce_code, ce_symbol) = get_strike_info(&scrip_data, &expiry_date, rounded_ltp, "CE");
-    let (pe_code, pe_symbol) = get_strike_info(&scrip_data, &expiry_date, rounded_ltp, "PE");
+    let (ce_code, ce_symbol) =
+        get_strike_info(&scrip_data, &index, &expiry_date, rounded_strike, "CE");
+    let (pe_code, pe_symbol) =
+        get_strike_info(&scrip_data, &index, &expiry_date, rounded_strike, "PE");
 
-    let ce_quote = get_quote(&auth, &exchange, &ce_code);
-    let pe_quote = get_quote(&auth, &exchange, &pe_code);
+    let ce_quote = auth.get_quote(&exchange, &ce_code);
+    let pe_quote = auth.get_quote(&exchange, &pe_code);
 
     let straddle_preimum = ce_quote + pe_quote;
-    let otm_strike_ce = rounded_ltp + straddle_preimum;
-    let otm_strike_pe = rounded_ltp - straddle_preimum;
+    let otm_strike_ce = rounded_strike + straddle_preimum;
+    let otm_strike_pe = rounded_strike - straddle_preimum;
     // Round the OTM strikes to the nearest strike price
     let otm_strike_ce = (otm_strike_ce / rounding).round() * rounding;
     let otm_strike_pe = (otm_strike_pe / rounding).round() * rounding;
 
-    // check if the OTM strikes are same as the rounded_ltp
-    if otm_strike_ce == rounded_ltp || otm_strike_pe == rounded_ltp {
+    // check if the OTM strikes are same as the rounded_strike
+    if otm_strike_ce == rounded_strike || otm_strike_pe == rounded_strike {
         error!("Cannot do the iron fly strategy, exiting!");
         std::process::exit(-1);
     }
 
     let (ce_code_sl, ce_symbol_sl) =
-        get_strike_info(&scrip_data, &expiry_date, otm_strike_ce, "CE");
+        get_strike_info(&scrip_data, &index, &expiry_date, otm_strike_ce, "CE");
     let (pe_code_sl, pe_symbol_sl) =
-        get_strike_info(&scrip_data, &expiry_date, otm_strike_pe, "PE");
+        get_strike_info(&scrip_data, &index, &expiry_date, otm_strike_pe, "PE");
 
-    let ce_quote_sl = get_quote(&auth, &exchange, &ce_code_sl);
-    let pe_quote_sl = get_quote(&auth, &exchange, &pe_code_sl);
+    let ce_quote_sl = auth.get_quote(&exchange, &ce_code_sl);
+    let pe_quote_sl = auth.get_quote(&exchange, &pe_code_sl);
 
     // max diff between ce_strike and otm_strike_ce and pe_strike and otm_strike_pe
-    let max_diff = (otm_strike_ce - rounded_ltp)
+    let max_diff = (otm_strike_ce - rounded_strike)
         .abs()
-        .max((otm_strike_pe - rounded_ltp).abs());
+        .max((otm_strike_pe - rounded_strike).abs());
+
+    let opt_chain = auth.get_option_chain(&exchange, &ce_symbol, rounded_strike);
+    let mut stangle_data = serde_json::Value::Null;
+    match opt_chain {
+        Ok(opt_chain) => {
+            let data = opt_chain["values"].as_array().unwrap();
+            let mut strikes = Vec::new();
+            for item in data.iter() {
+                let token = item["token"].as_str().unwrap();
+                let tsym = item["tsym"].as_str().unwrap();
+                let ltp = auth.get_quote(&exchange, &tsym);
+                let opttype = item["optt"].as_str().unwrap();
+                strikes.push((ltp, tsym, opttype, token));
+            }
+
+            debug!("Strikes: {:?}", strikes);
+            // find the nearest strike ltp and strike tsym closest to NEAREST_LTP for each option type,
+            // minimize the difference
+            let mut nearest_ce_strike = 0.0;
+            let mut nearest_ce_strike_tsym = String::new();
+            let mut nearest_ce_token: String = String::new();
+            let mut nearest_pe_strike = 0.0;
+            let mut nearest_pe_strike_tsym = String::new();
+            let mut nearest_pe_token: String = String::new();
+            let mut min_diff_ce = f64::MAX;
+            let mut min_diff_pe = f64::MAX;
+            for strike in strikes.iter() {
+                let ltp = strike.0;
+                let tsym = strike.1;
+                let opttype = strike.2;
+                let token = strike.3;
+                let diff = (ltp - closest_price).abs();
+                if opttype == "CE" && diff < min_diff_ce {
+                    min_diff_ce = diff;
+                    nearest_ce_strike = ltp;
+                    nearest_ce_strike_tsym = tsym.to_string();
+                    nearest_ce_token = token.to_string();
+                } else if opttype == "PE" && diff < min_diff_pe {
+                    min_diff_pe = diff;
+                    nearest_pe_strike = ltp;
+                    nearest_pe_strike_tsym = tsym.to_string();
+                    nearest_pe_token = token.to_string();
+                }
+            }
+            debug!(
+                "CE: {} {} {}",
+                nearest_ce_strike, nearest_ce_strike_tsym, nearest_ce_token
+            );
+            debug!(
+                "PE: {} {} {}",
+                nearest_pe_strike, nearest_pe_strike_tsym, nearest_pe_token
+            );
+
+            stangle_data = serde_json::json!({
+                "ce_code": nearest_ce_token,
+                "pe_code": nearest_pe_token,
+                "ce_symbol": nearest_ce_strike_tsym,
+                "pe_symbol": nearest_pe_strike_tsym,
+                "ce_ltp": nearest_ce_strike,
+                "pe_ltp": nearest_pe_strike,
+            });
+        }
+        Err(e) => {
+            info!("Error for Option chain: {}", e);
+        }
+    }
 
     // create a json object
     let result = serde_json::json!({
@@ -124,7 +193,9 @@ fn get_straddle_strikes(auth: &Auth, index: &str) -> serde_json::Value {
         "ce_ltp_sl": ce_quote_sl,
         "pe_ltp_sl": pe_quote_sl,
         "max_diff": max_diff,
+        "strangle": stangle_data
     });
+
     result
 }
 
@@ -175,6 +246,10 @@ struct Cli {
     /// Credentials file
     #[clap(short, long, default_value = "../cred.yml")]
     credentials_file: String,
+
+    /// Closest to ltp
+    #[clap(long, default_value = "25.0")]
+    closest_ltp: f64,
 }
 
 fn main() {
@@ -195,25 +270,18 @@ fn main() {
 
     auth.login(args.credentials_file.as_str(), args.force);
 
-    let order_book = get_order_book(&auth);
+    // let order_book = get_order_book(&auth);
 
-    match order_book {
-        Ok(order_book) => {
-            info!("Order book: {}", order_book);
-        }
-        Err(e) => {
-            info!("Error: {}", e);
-        }
-    }
+    // match order_book {
+    //     Ok(order_book) => {
+    //         info!("Order book: {}", order_book);
+    //     }
+    //     Err(e) => {
+    //         info!("Error: {}", e);
+    //     }
+    // }
 
-    let indices_map = build_indices_map(&auth);
-
-    // log the indices_map
-    for (idxname, token) in indices_map.iter() {
-        info!("{}: {}", idxname, token);
-    }
-
-    let straddle_strikes = get_straddle_strikes(&auth, args.index.as_str());
+    let straddle_strikes = get_straddle_strikes(&auth, args.index.as_str(), args.closest_ltp);
     info!(
         "Straddle strikes: {}",
         pretty_print_json(&straddle_strikes, 3)
