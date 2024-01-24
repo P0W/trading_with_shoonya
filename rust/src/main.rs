@@ -1,9 +1,7 @@
-use clap::builder::Str;
 use common::utils::utils::*;
 use scrip_master::scrips::download_scrip;
 use shoonya::auth::auth::Auth;
 use shoonya::markets::markets::Markets;
-use shoonya::orders::orders::get_order_book;
 
 use clap::Parser;
 use log::*;
