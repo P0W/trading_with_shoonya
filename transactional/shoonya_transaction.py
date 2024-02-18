@@ -176,7 +176,7 @@ class ShoonyaTransaction:
                     self.logger.info("Order cancelled: %s", response)
                     ## remove remarks from order queue
                     self.order_queue.remove(remarks)
-                elif status == OrderStatus.COMPLETE:
+                elif status == OrderStatus.COMPLETE:  ## _stop_loss order is completed
                     ## if cancel_remarks is completed, simply remove remarks from order queue
                     self.order_queue.remove(remarks)
 
@@ -185,7 +185,32 @@ class ShoonyaTransaction:
         """Cancel order using Shoonya API"""
         total_pnl = self.transaction_manager.get_pnl()
         if total_pnl > target_profit:
-            self.logger.info("Target profit reached, cancelling all pending orders")
+            self.logger.info(
+                "Target reached Current Pnl: %.2f | Target: %.2f, cancelling all pending orders",
+                total_pnl,
+                target_profit,
+            )
+            self._square_off()
+
+    @delay_decorator(delay=10)
+    def exit_on_book_profit(self):
+        """Exit if book profit is reached on each leg"""
+        result = True
+        for item in ["ce", "pe"]:
+            message = get_remarks(instance_id=self.instance_id, msg=f"{item}_straddle")
+            book_profit_remarks = f"{message}_book_profit"
+            if book_profit_remarks in self.order_queue:
+                ## Not yet placed, still in order queue
+                result = False
+                break
+            norenordno, _ = self.transaction_manager.get_for_remarks(
+                book_profit_remarks, OrderStatus.COMPLETE
+            )
+            if not norenordno:
+                result = False
+                break
+        if result:
+            self.logger.warning("Book profit reached, sqauring off all pending orders")
             self._square_off()
 
     def test(self, status: str, interval: int = 15):
@@ -404,7 +429,10 @@ def main(args):
                 parent_status=OrderStatus.COMPLETE,
                 cancel_remarks=f"{subscribe_msg}_stop_loss",
             )
-            shoonya_transaction.cancel_on_profit(target_profit=target_mtm)
+            shoonya_transaction.cancel_on_profit(
+                target_profit=target_mtm
+            )  ## Cancel all orders if target is reached
+            shoonya_transaction.exit_on_book_profit()  ## Exit if book profit is reached on each leg
             shoonya_transaction.place_order(  ## Place exit order, if stop loss is CANCELED
                 order_data={
                     "buy_or_sell": "B",

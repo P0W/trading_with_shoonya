@@ -320,6 +320,8 @@ class TransactionManager(order_manager.OrderManager):
             msg.append({key: f"{ltp:.2f} : {pnl:.2f}"})
             total_pnl += pnl
         if msg:
+            ## sort msg by key
+            msg = sorted(msg, key=lambda k: list(k.keys())[0])
             msg.append({"Total": f"{total_pnl:.2f}"})
             self.logger.info(json.dumps(msg, indent=1))
         return total_pnl
