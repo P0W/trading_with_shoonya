@@ -1,7 +1,6 @@
 """
 Constants for shoonya trading
 """
-
 import enum
 
 

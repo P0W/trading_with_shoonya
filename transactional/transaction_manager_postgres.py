@@ -9,10 +9,12 @@ from contextlib import contextmanager
 from typing import Any
 from typing import Dict
 from typing import List
+from typing import Tuple
 
 import psycopg2.extras
-from psycopg2.pool import ThreadedConnectionPool, PoolError
 from const import OrderStatus
+from psycopg2.pool import PoolError
+from psycopg2.pool import ThreadedConnectionPool
 from utils import full_stack
 
 import order_manager  ## pylint: disable=import-error
@@ -245,7 +247,7 @@ class TransactionManager(order_manager.OrderManager):
 
     def get_for_remarks(
         self, remarks: str, expected: OrderStatus = None
-    ) -> (str, OrderStatus):
+    ) -> Tuple[str, OrderStatus]:
         """
         Get norenordno if order executed for remark,
         for utc_timestamp greater than start_time, otherwise None

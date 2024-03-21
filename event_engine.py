@@ -171,7 +171,7 @@ class EventEngine:
                             symbol_code,
                             json.dumps(self.tick_data, indent=2),
                         )
-                        square_off_price = 0.0
+                        square_off_price = 0.0 ## pylint: disable=unused-variable
                     else:
                         ltp = self.tick_data[symbol_code]["lp"]
                         square_off_price = ltp
@@ -190,7 +190,7 @@ class EventEngine:
                             "quantity": qty,
                             "discloseqty": 0,
                             "price_type": "MKT",  ## CHANGE TO LMT
-                            "price": 0.0,  ## FIXME: square_off_price,
+                            "price": 0.0,  ## square_off_price,
                             "trigger_price": None,
                             "retention": "DAY",
                             "remarks": f"{remarks}_exit",

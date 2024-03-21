@@ -74,8 +74,8 @@ class ShoonyaApiPy(NorenApi):
                 api_secret=cred["apikey"],
                 imei=cred["imei"],
             )
-            susertoken = ret["susertoken"]
             try:
+                susertoken = ret["susertoken"]
                 self.redis_client.set(
                     self.access_token_key, susertoken, ex=self.token_expiry
                 )
@@ -84,3 +84,5 @@ class ShoonyaApiPy(NorenApi):
                 self.logger.error(
                     "Failed to set access token or login date in cache: %s", redis_error
                 )
+            except Exception as all_ex: ## pylint: disable=broad-exception-caught
+                self.logger.error("Failed to login: %s", all_ex)

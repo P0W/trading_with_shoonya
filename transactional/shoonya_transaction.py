@@ -53,7 +53,6 @@ class ShoonyaTransaction:
             self.order_queue.add(f"{message}_stop_loss")
             self.order_queue.add(f"{message}_subscribe")
             self.order_queue.add(f"{message}_book_profit")
-            self.order_queue.add(f"{message}_exit")
             self.order_queue.add(f"{message}_stop_loss_subscribe")
             self.order_queue.add(f"{message}_cancel")
             self.order_queue.add(f"{message}_unsubscribe")
@@ -119,19 +118,15 @@ class ShoonyaTransaction:
         """
         if remarks not in self.order_queue:
             return
-        norenordno_stop_loss, _ = self.transaction_manager.get_for_remarks(
-            f"{parent_remarks}_exit", OrderStatus.COMPLETE
-        )
         norenordno_book_profit, _ = self.transaction_manager.get_for_remarks(
             f"{parent_remarks}_book_profit", OrderStatus.COMPLETE
         )
         norenordno_cancelled, _ = self.transaction_manager.get_for_remarks(
             f"{parent_remarks}", OrderStatus.CANCELED
         )
-        if norenordno_stop_loss or norenordno_book_profit or norenordno_cancelled:
+        if norenordno_book_profit or norenordno_cancelled:
             self.logger.debug(
-                "stop_loss %s or book_profit %s or cancelled %s",
-                norenordno_stop_loss,
+                "book_profit %s or cancelled %s",
                 norenordno_book_profit,
                 norenordno_cancelled,
             )
@@ -433,24 +428,6 @@ def main(args):
                 target_profit=target_mtm
             )  ## Cancel all orders if target is reached
             shoonya_transaction.exit_on_book_profit()  ## Exit if book profit is reached on each leg
-            shoonya_transaction.place_order(  ## Place exit order, if stop loss is CANCELED
-                order_data={
-                    "buy_or_sell": "B",
-                    "product_type": "M",  ## NRML
-                    "exchange": get_exchange(symbol),
-                    "tradingsymbol": symbol,
-                    "quantity": qty,
-                    "discloseqty": 0,
-                    "price_type": "MKT",  ## Market order
-                    "price": 0,
-                    "trigger_price": None,
-                    "retention": "DAY",
-                    "remarks": f"{subscribe_msg}_exit",
-                },
-                parent_remarks=f"{subscribe_msg}_stop_loss",
-                parent_status=OrderStatus.CANCELED,
-                exit_order=f"{subscribe_msg}_target_hit",
-            )
             shoonya_transaction.unsubscribe(  ## Unsubscribe from straddle symbol,
                 ## if exit order is placed or order is cancelled
                 ## or book profit order is executed
