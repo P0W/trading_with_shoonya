@@ -19,6 +19,9 @@ It works (and tested) with NIFTY, BANKNIFTY, FINNIFTY, SENSEX, BANKEX, MIDCPNIFT
 Covert a short straddle to iron butter fly to tackle intraday spikes, which tend to hit stop loss frequently. 
 Give the strategy time to juggle between volatility and eventually comes to rest on expiry days.
 
+![IronFly](https://github.com/P0W/trading_with_shoonya/assets/5833233/67246ff5-8997-4c16-80a9-0beeb9700b61)
+
+
 ---
 
 ```
