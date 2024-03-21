@@ -11,8 +11,10 @@ It works (and tested) with NIFTY, BANKNIFTY, FINNIFTY, SENSEX, BANKEX, MIDCPNIFT
 ```
 usage: shoonya_transaction.py [-h] [--force] --index {NIFTY,BANKNIFTY,FINNIFTY,MIDCPNIFTY,SENSEX,BANKEX,CRUDEOIL}
                               --qty QTY [--sl_factor SL_FACTOR] [--target TARGET] [--log-level {INFO,DEBUG}]
-                              [--show-strikes] [--pnl-display-interval PNL_DISPLAY_INTERVAL] [--target-mtm TARGET_MTM]
-                              [--book-profit BOOK_PROFIT] [--cred-file CRED_FILE] [--instance-id INSTANCE_ID]   
+                              [--show-strikes] [--pnl-display-interval PNL_DISPLAY_INTERVAL]
+                              [--target-mtm TARGET_MTM] [--book-profit BOOK_PROFIT]
+                              [--cred-file CRED_FILE] [--instance-id INSTANCE_ID]
+                              [--same-premium]
 
 Straddle orders for NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY and USDINR
 
@@ -22,21 +24,22 @@ options:
   --index {NIFTY,BANKNIFTY,FINNIFTY,MIDCPNIFTY,SENSEX,BANKEX,CRUDEOIL}
   --qty QTY             Quantity to trade
   --sl_factor SL_FACTOR
-                        Stop loss factor | default 30 percent on individual leg
+                        Stop loss factor | default 75 percent on individual leg
   --target TARGET       Target profit | default 35 percent of collected premium
   --log-level {INFO,DEBUG}
                         Log level
   --show-strikes        Show strikes only and exit
   --pnl-display-interval PNL_DISPLAY_INTERVAL
-                        PnL display interval in seconds
+                        PnL display interval in seconds | default 15 seconds
   --target-mtm TARGET_MTM
-                        Target MTM profit
+                        Target MTM profit | default no target MTM profit
   --book-profit BOOK_PROFIT
-                        Book profit percent of premium left
+                        Book profit percent of premium left | default 60 percent of premium left
   --cred-file CRED_FILE
-                        Credential file
+                        Credential file | default cred.yml in the current directory
   --instance-id INSTANCE_ID
                         Instance id for multiple instance of the scripts
+  --same-premium        Look for same premium for both legs
 ```
 
 ## Installation
