@@ -15,12 +15,12 @@ from functools import wraps
 import colorlog
 import pandas as pd
 import requests
-
 from const import EXCHANGE
 from const import INDICES_ROUNDING
 from const import INDICES_TOKEN
 from const import LOT_SIZE
 from const import SCRIP_SYMBOL_NAME
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -384,9 +384,9 @@ def parse_args():
     args.add_argument("--qty", required=True, type=int, help="Quantity to trade")
     args.add_argument(
         "--sl_factor",
-        default=1.30,
+        default=1.75,
         type=float,
-        help="Stop loss factor | default 30 percent on individual leg",
+        help="Stop loss factor | default 75 percent on individual leg",
     )
     args.add_argument(
         "--target",
@@ -407,29 +407,35 @@ def parse_args():
         "--pnl-display-interval",
         default=15,
         type=int,
-        help="PnL display interval in seconds",
+        help="PnL display interval in seconds | default 15 seconds",
     )
     args.add_argument(
         "--target-mtm",
         default=-1,
         type=float,
-        help="Target MTM profit",
+        help="Target MTM profit | default no target MTM profit",
     )
     args.add_argument(
         "--book-profit",
-        default=0.2,
+        default=0.6,
         type=float,
-        help="Book profit percent of premium left",
+        help="Book profit percent of premium left | default 60 percent of premium left",
     )
     args.add_argument(
         "--cred-file",
         default="cred.yml",
-        help="Credential file",
+        help="Credential file | default cred.yml in the current directory",
     )
     args.add_argument(
         "--instance-id",
         default=None,
         help="Instance id for multiple instance of the scripts",
+    )
+    args.add_argument(
+        "--same-premium",
+        action="store_true",
+        default=False,
+        help="Look for same premium for both legs",
     )
 
     return args.parse_args()
@@ -483,6 +489,12 @@ def get_remarks(instance_id: str, msg: str):
     Get the remarks suffix
     """
     return f"{instance_id}|{msg}"
+
+
+def wait_with_progress(wait_period: int = 300):
+    """Show a progress bar while waiting for a period of time."""
+    for _ in tqdm(range(wait_period), desc=f"Waiting for {wait_period} seconds"):
+        time.sleep(1)
 
 
 refresh_indices_code()

@@ -171,7 +171,7 @@ class EventEngine:
                             symbol_code,
                             json.dumps(self.tick_data, indent=2),
                         )
-                        square_off_price = 0.0 ## pylint: disable=unused-variable
+                        square_off_price = 0.0  ## pylint: disable=unused-variable
                     else:
                         ltp = self.tick_data[symbol_code]["lp"]
                         square_off_price = ltp

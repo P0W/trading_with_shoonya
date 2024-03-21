@@ -10,3 +10,4 @@ black
 pylint
 colorlog
 psycopg2
+tqdm

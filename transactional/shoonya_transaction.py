@@ -14,11 +14,12 @@ from utils import configure_logger
 from utils import delay_decorator
 from utils import get_exchange
 from utils import get_instance_id
+from utils import get_remarks
 from utils import get_staddle_strike
 from utils import parse_args
 from utils import round_to_point5
 from utils import validate
-from utils import get_remarks
+from utils import wait_with_progress
 
 import transaction_manager_postgres  ## pylint: disable=import-error
 
@@ -288,6 +289,8 @@ def main(args):
     cred_file = args.cred_file
     target_mtm = args.target_mtm
     instance_id = args.instance_id
+    same_premium = args.same_premium
+    show_strikes = args.show_strikes
     logger = configure_logger(args.log_level, f"shoonya_transaction_{index}")
 
     logger.debug("Input Arguments: %s", json.dumps(vars(args), indent=2))
@@ -303,7 +306,19 @@ def main(args):
     ## validate the quantity
     validate(qty, index)
 
-    strikes_data = get_staddle_strike(api, symbol_index=index, qty=args.qty)
+    strikes_data = get_staddle_strike(api, symbol_index=index, qty=qty)
+    if same_premium and not show_strikes:
+        ## keep checking for same premium, if not same, keep updating the strikes,
+        ## after every 5 minutes
+        diff = abs(float(strikes_data["ce_ltp"]) - float(strikes_data["pe_ltp"]))
+        while diff > 15:
+            logger.info(
+                "Difference in premium: %.2f, re-checking strikes after 5 minutes", diff
+            )
+            ## use a visual indicator to show that the script is running
+            wait_with_progress(300)
+            strikes_data = get_staddle_strike(api, symbol_index=index, qty=qty)
+            diff = abs(float(strikes_data["ce_ltp"]) - float(strikes_data["pe_ltp"]))
 
     premium = qty * (float(strikes_data["ce_ltp"]) + float(strikes_data["pe_ltp"]))
     premium_lost = (
@@ -328,7 +343,7 @@ def main(args):
         target_mtm,
     )
 
-    if args.show_strikes:
+    if show_strikes:
         sys.exit(0)
 
     shoonya_transaction = ShoonyaTransaction(api_object=api, instance_id=instance_id)

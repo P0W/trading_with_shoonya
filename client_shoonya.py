@@ -84,5 +84,5 @@ class ShoonyaApiPy(NorenApi):
                 self.logger.error(
                     "Failed to set access token or login date in cache: %s", redis_error
                 )
-            except Exception as all_ex: ## pylint: disable=broad-exception-caught
+            except Exception as all_ex:  ## pylint: disable=broad-exception-caught
                 self.logger.error("Failed to login: %s", all_ex)
