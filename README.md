@@ -1,10 +1,23 @@
-# Trading with shoonya
+# Transactional Algo trading bot with Shoonya API
 
 ## Description
 
 This project is a trading bot built with Python. It uses the `shoonya_transaction.py` script to place a short straddle, with OTM stop losses and then monitors the live MTM
 
 It works (and tested) with NIFTY, BANKNIFTY, FINNIFTY, SENSEX, BANKEX, MIDCPNIFTY, CRUDEOIL options.
+
+## The Strategy
+
+1. Place ATM Short Straddle when premimum are almost same (difference: ~15 points)
+2. On the breakeven strike (CE = ATM + collected premium, PE = ATM - collected premium), place a stop loss order at 1.75 % (configurable) of the strike price
+3. Place a book profit order at 60 % (configurable) on the individual ATM legs
+4. Monitor the target = 35% of collected premimum (configurable)
+5. Cancel pending orders if either target mtm is achieved or both legs profit is booked or time is 15:31 IST or inital ATM straddle is rejected
+
+## The Secret Sauce
+
+Covert a short straddle to iron butter fly to tackle intraday spikes, which tend to hit stop loss frequently. 
+Give the strategy time to juggle between volatility and eventually comes to rest on expiry days.
 
 ---
 
@@ -78,4 +91,4 @@ Sample runs
    python .\shoonya_transaction.py --cred-file ..\cred.yml --index FINNIFTY --qty 40 --target-mtm 221.00 --show-strikes
 ```
 
-**NOTE**: The `shoonya.py` is in decrecation mode, however one can look into the event based algo trade bot idea.
+**NOTE**: The `rust` contents are not yet complete. I am trying to implement this on rust sooner.
