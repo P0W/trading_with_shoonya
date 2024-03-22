@@ -312,6 +312,12 @@ def main(args):
         ## after every 5 minutes
         diff = abs(float(strikes_data["ce_ltp"]) - float(strikes_data["pe_ltp"]))
         while diff > 15:
+            ## Display ltp values too
+            logger.info(
+                "Current LTP: CE: %.2f | PE: %.2f",
+                float(strikes_data["ce_ltp"]),
+                float(strikes_data["pe_ltp"]),
+            )
             logger.info(
                 "Difference in premium: %.2f, re-checking strikes after 5 minutes", diff
             )
