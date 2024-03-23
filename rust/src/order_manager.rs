@@ -2,28 +2,48 @@
 
 use log::*;
 use serde_json;
-use shoonya::markets::markets::{WebSocketApp, Websocket};
-use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex},
+use shoonya::{
+    auth::auth::Auth,
+    websocket::websocket::{WebSocketApi, WebSocketApp, WebSocketCallback},
 };
+use std::collections::HashSet;
 
 pub struct OrderManager {
     api: WebSocketApp,
     opened: bool,
     subscribed_symbols: HashSet<String>,
     running: bool,
-    config: serde_json::Value,
+    auth: Auth,
+}
+
+pub struct WebSocketCallbackHandler;
+
+impl WebSocketCallback for WebSocketCallbackHandler {
+    fn on_open(&self, res: &serde_json::Value) {
+        info!("Websocket Opened {:?}", res);
+    }
+
+    fn on_error(&self, res: &serde_json::Value) {
+        info!("Websocket Error {:?}", res);
+    }
+
+    fn subscribe_callback(&self, res: &serde_json::Value) {
+        info!("Subscribed to {:?}", res);
+    }
+
+    fn order_callback(&self, res: &serde_json::Value) {
+        info!("Order Callback {:?}", res);
+    }
 }
 
 impl OrderManager {
-    pub fn new(api_object: WebSocketApp, config: serde_json::Value) -> OrderManager {
+    pub fn new(api_object: WebSocketApp, auth: Auth) -> OrderManager {
         OrderManager {
             api: api_object,
             opened: false,
             subscribed_symbols: HashSet::new(),
             running: false,
-            config,
+            auth,
         }
     }
 
@@ -42,6 +62,7 @@ impl OrderManager {
         self.opened = true;
     }
 
+    #[allow(dead_code)]
     pub fn subscribe(&mut self, symbols: Vec<String>) {
         // Convert HashSet to Vec<String>
         let symbols: Vec<String> = symbols.iter().cloned().collect();
@@ -50,6 +71,7 @@ impl OrderManager {
         info!("Current subscribed_symbols: {:?}", self.subscribed_symbols);
     }
 
+    #[allow(dead_code)]
     pub fn unsubscribe(&mut self, symbols: Vec<String>) {
         let copy = self.subscribed_symbols.clone();
         for symbol in symbols {
@@ -74,20 +96,8 @@ impl OrderManager {
         false
     }
 
-    pub fn start(&mut self, user_callback: fn(serde_json::Value)) {
-        let url = "wss://api.shoonya.com/NorenWSTP/".to_owned();
-        self.api.start_websocket(
-            &url,
-            user_callback,
-            || {
-                //  let mut self_clone = self_clone.lock().unwrap();
-                //  self_clone._open_callback();
-                
-            },
-            |err: String| {
-                error!("Error: {}", err);
-            },
-        );
+    pub fn start(&mut self) {
+        self.api.start_websocket(&self.auth);
         self.opened = true;
         self.running = true;
     }

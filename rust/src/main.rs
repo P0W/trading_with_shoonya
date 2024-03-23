@@ -1,14 +1,18 @@
+mod logger;
+mod order_manager;
+
 use common::utils::utils::*;
 use scrip_master::scrips::download_scrip;
 use shoonya::auth::auth::Auth;
-use shoonya::markets::markets::{Markets, WebSocketApp};
+use shoonya::markets::markets::Markets;
+use shoonya::websocket::websocket::WebSocketApp;
 
 use clap::Parser;
 use log::*;
 
-mod logger;
-mod order_manager;
+use crate::order_manager::WebSocketCallbackHandler;
 
+#[allow(dead_code)]
 fn build_indices_map(auth: &Auth) -> std::collections::HashMap<String, String> {
     let mut result = std::collections::HashMap::new();
     let exchanges = [
@@ -286,16 +290,11 @@ fn main() {
         pretty_print_json(&straddle_strikes, 3)
     );
 
-    let websocket = WebSocketApp::new();
+    let websocket = WebSocketApp::new(WebSocketCallbackHandler);
 
-    let mut order_manager = order_manager::OrderManager::new(websocket, serde_json::Value::Null);
+    let mut order_manager = order_manager::OrderManager::new(websocket, auth);
 
-    // create a closure accepting a serde_json::Value
-    let on_message = |msg: serde_json::Value| {
-        info!("Received message: {}", msg);
-    };
-
-    order_manager.start(on_message);
+    order_manager.start();
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1));
         if order_manager.day_over() {

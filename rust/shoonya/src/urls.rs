@@ -29,6 +29,6 @@ pub mod urls {
     pub const SPAN_CALCULATOR: &str = "/SpanCalc";
     pub const OPTION_GREEK: &str = "/GetOptionGreek";
     pub const GET_DAILY_PRICE_SERIES: &str = "/EODChartData";
-    pub const WEBSOCKET_ENDPOINT: &str = "wss://wsendpoint/";
+    pub const WEBSOCKET_ENDPOINT: &str = "wss://api.shoonya.com/NorenWSTP/";
     pub const GET_INDICES_LIST: &str = "/GetIndexList";
 }
