@@ -15,3 +15,6 @@ totp-rs = "5.4.0"
 sha2 = "0.10.8"
 log = "0.4.20"
 common = { path = "../common"}
+tungstenite = "0.21.0"
+url = "2.5.0"
+tokio = "1.36.0"

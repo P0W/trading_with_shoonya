@@ -1,12 +1,13 @@
 use common::utils::utils::*;
 use scrip_master::scrips::download_scrip;
 use shoonya::auth::auth::Auth;
-use shoonya::markets::markets::Markets;
+use shoonya::markets::markets::{Markets, WebSocketApp};
 
 use clap::Parser;
 use log::*;
 
 mod logger;
+mod order_manager;
 
 fn build_indices_map(auth: &Auth) -> std::collections::HashMap<String, String> {
     let mut result = std::collections::HashMap::new();
@@ -284,4 +285,21 @@ fn main() {
         "Straddle strikes: {}",
         pretty_print_json(&straddle_strikes, 3)
     );
+
+    let websocket = WebSocketApp::new();
+
+    let mut order_manager = order_manager::OrderManager::new(websocket, serde_json::Value::Null);
+
+    // create a closure accepting a serde_json::Value
+    let on_message = |msg: serde_json::Value| {
+        info!("Received message: {}", msg);
+    };
+
+    order_manager.start(on_message);
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        if order_manager.day_over() {
+            break;
+        }
+    }
 }

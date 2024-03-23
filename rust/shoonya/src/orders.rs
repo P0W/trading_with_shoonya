@@ -4,7 +4,6 @@ pub mod orders {
 
     use crate::urls::urls::{HOST, ORDERBOOK};
     use serde_json::json;
-    
 
     pub fn get_order_book(
         auth: &crate::auth::auth::Auth,
