@@ -75,7 +75,10 @@ pub mod websocket {
         }
 
         fn start_websocket(&mut self, auth: &Auth) {
-            let (ws_original, _) = connect(WEBSOCKET_ENDPOINT).unwrap();
+            let (ws_original, res) = connect(WEBSOCKET_ENDPOINT).unwrap_or_else(|e| {
+                panic!("Error connecting to the server: {:?}", e);
+            });
+            info!("Connected to the server: {:?}", res);
             self.websocket = Some(Arc::new(Mutex::new(ws_original)));
             self.websocket_connected.store(true, Ordering::SeqCst);
 

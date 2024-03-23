@@ -284,11 +284,11 @@ fn main() {
     //     }
     // }
 
-    let straddle_strikes = get_straddle_strikes(&auth, args.index.as_str(), args.closest_ltp);
-    info!(
-        "Straddle strikes: {}",
-        pretty_print_json(&straddle_strikes, 3)
-    );
+    // let straddle_strikes = get_straddle_strikes(&auth, args.index.as_str(), args.closest_ltp);
+    // info!(
+    //     "Straddle strikes: {}",
+    //     pretty_print_json(&straddle_strikes, 3)
+    // );
 
     let websocket = WebSocketApp::new(WebSocketCallbackHandler);
 

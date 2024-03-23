@@ -108,3 +108,11 @@ class OrderManager:
             self.logger.info("Waiting for websocket to open")
             time.sleep(0.5)
         self.running = True
+
+if __name__ == "__main__":
+    import client_shoonya
+    import utils
+    utils.configure_logger("DEBUG", "test_order_manager")
+    api = client_shoonya.ShoonyaApiPy(cred_file="../cred.yml", force_login=False)
+    om = OrderManager(api, {})
+    om.start()
