@@ -6,6 +6,7 @@ pub mod auth {
     use sha2::{Digest, Sha256};
     use totp_rs::{Rfc6238, Secret, TOTP};
 
+    #[derive(Debug, Default)]
     pub struct Auth {
         pub username: String,
         pub accountid: String,
