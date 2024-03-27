@@ -2,6 +2,8 @@
 
 pub mod orders {
 
+    use std::{cell::RefCell, rc::Rc};
+
     use crate::{
         auth::auth::Auth,
         urls::urls::{CANCELORDER, HOST, ORDERBOOK, PLACEORDER},
@@ -9,12 +11,12 @@ pub mod orders {
     use serde_json::json;
 
     #[derive(Debug, Default)]
-    struct OrderBuilder {
-        pub auth: Auth,
+    pub struct OrderBuilder {
+        pub auth: Rc<RefCell<Auth>>,
         pub orderno: String,
         pub tradingsymbol: String,
         pub exchange: String,
-        pub quantity: i32,
+        pub quantity: u32,
         pub price: f64,
         pub trigger_price: f64,
         pub status: String,
@@ -86,7 +88,7 @@ pub mod orders {
     }
 
     impl OrderBuilder {
-        pub fn new(auth: Auth) -> OrderBuilder {
+        pub fn new(auth: Rc<RefCell<Auth>>) -> OrderBuilder {
             OrderBuilder {
                 auth,
                 retention: "DAY".to_owned(),
@@ -108,7 +110,7 @@ pub mod orders {
             self.exchange = exchange;
             self
         }
-        pub fn quantity(&mut self, quantity: i32) -> &mut Self {
+        pub fn quantity(&mut self, quantity: u32) -> &mut Self {
             self.quantity = quantity;
             self
         }
@@ -174,8 +176,8 @@ pub mod orders {
 
             let mut values = json!({
                 "ordersource": "API",
-                "uid": self.auth.username,
-                "actid": self.auth.username,
+                "uid": self.auth.borrow().username,
+                "actid": self.auth.borrow().username,
                 "trantype": self.buy_or_sell,
                 "prd": self.product_type,
                 "exch": self.exchange,
@@ -210,7 +212,7 @@ pub mod orders {
             }
 
             let url = format!("{}{}", HOST, PLACEORDER);
-            let payload = format!("jData={}&jKey={}", values.to_string(), self.auth.susertoken);
+            let payload = format!("jData={}&jKey={}", values.to_string(), self.auth.borrow().susertoken);
             let client = reqwest::blocking::Client::new();
             let res: String = client
                 .post(&url)

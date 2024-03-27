@@ -1,10 +1,14 @@
 mod logger;
 mod order_manager;
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use common::utils::utils::*;
 use scrip_master::scrips::download_scrip;
 use shoonya::auth::auth::Auth;
 use shoonya::markets::markets::Markets;
+use shoonya::orders::orders::OrderBuilder;
 use shoonya::websocket::websocket::WebSocketApp;
 
 use clap::Parser;
@@ -284,17 +288,40 @@ fn main() {
     //     }
     // }
 
-    // let straddle_strikes = get_straddle_strikes(&auth, args.index.as_str(), args.closest_ltp);
-    // info!(
-    //     "Straddle strikes: {}",
-    //     pretty_print_json(&straddle_strikes, 3)
-    // );
+    let straddle_strikes = get_straddle_strikes(&auth, args.index.as_str(), args.closest_ltp);
+    info!(
+        "Straddle strikes: {}",
+        pretty_print_json(&straddle_strikes, 3)
+    );
 
-    let websocket = WebSocketApp::new(WebSocketCallbackHandler);
+    let pnl_feed = Box::new(|pnl: f64, pnl_str: String| {
+        info!("PnL: {} {}", pnl, pnl_str);
+    });
 
-    let mut order_manager = order_manager::OrderManager::new(websocket, auth);
+    let websocket = WebSocketApp::new(WebSocketCallbackHandler::new(Some(pnl_feed)));
+    let auth_ptr = Rc::new(RefCell::new(auth));
+
+    let mut order_manager = order_manager::OrderManager::new(websocket, auth_ptr.clone());
 
     order_manager.start();
+
+    // subscribe to the symbols from the straddle_strikes
+    let exchange = "NFO";
+    for item in ["ce", "pe"].iter() {
+        let sym_code = straddle_strikes[format!("{}_code", item)].as_str().unwrap();
+        let subscribe_code = format!("{}|{}", exchange, sym_code);
+        let trading_symbol = straddle_strikes[format!("{}_symbol", item)]
+            .as_str()
+            .unwrap();
+        order_manager.subscribe(vec![subscribe_code]);
+        // place order for the symbol
+        let qty = args.qty;
+        let _ = OrderBuilder::new(auth_ptr.clone())
+            .exchange(exchange.to_owned())
+            .tradingsymbol(trading_symbol.to_string())
+            .quantity(qty)
+            .place();
+    }
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1));
         if order_manager.day_over() {

@@ -2,42 +2,64 @@
 
 use log::*;
 use serde_json;
+use shoonya::transaction::transaction::TransactionManager;
 use shoonya::{
     auth::auth::Auth,
+    transaction::transaction::Transaction,
     websocket::websocket::{WebSocketApi, WebSocketApp, WebSocketCallback},
 };
+use std::cell::RefCell;
 use std::collections::HashSet;
+use std::rc::Rc;
 
 pub struct OrderManager {
     api: WebSocketApp,
     opened: bool,
     subscribed_symbols: HashSet<String>,
     running: bool,
-    auth: Auth,
+    auth: Rc<RefCell<Auth>>,
 }
 
-pub struct WebSocketCallbackHandler;
+pub struct WebSocketCallbackHandler {
+    pub redis_transaction: TransactionManager,
+    pub pnl_feed_callback: Option<Box<dyn Fn(f64, String) + Send>>,
+}
+
+impl WebSocketCallbackHandler {
+    pub fn new(
+        callback: Option<Box<dyn Fn(f64, String) + Send + 'static>>,
+    ) -> WebSocketCallbackHandler {
+        WebSocketCallbackHandler {
+            redis_transaction: TransactionManager::new(),
+            pnl_feed_callback: callback,
+        }
+    }
+}
 
 impl WebSocketCallback for WebSocketCallbackHandler {
-    fn on_open(&self, res: &serde_json::Value) {
+    fn on_open(&mut self, res: &serde_json::Value) {
         info!("Websocket Opened {:?}", res);
     }
 
-    fn on_error(&self, res: &serde_json::Value) {
+    fn on_error(&mut self, res: &serde_json::Value) {
         info!("Websocket Error {:?}", res);
     }
 
-    fn subscribe_callback(&self, res: &serde_json::Value) {
-        info!("Subscribed to {:?}", res);
+    fn subscribe_callback(&mut self, tick_data: &serde_json::Value) {
+        self.redis_transaction.on_tick(tick_data);
+        let (pnl, pnl_str) = self.redis_transaction.get_pnl();
+        if let Some(callback) = self.pnl_feed_callback.as_mut() {
+            callback(pnl, pnl_str);
+        }
     }
 
-    fn order_callback(&self, res: &serde_json::Value) {
-        info!("Order Callback {:?}", res);
+    fn order_callback(&mut self, order_data: &serde_json::Value) {
+        self.redis_transaction.on_order(order_data);
     }
 }
 
 impl OrderManager {
-    pub fn new(api_object: WebSocketApp, auth: Auth) -> OrderManager {
+    pub fn new(api_object: WebSocketApp, auth: Rc<RefCell<Auth>>) -> OrderManager {
         OrderManager {
             api: api_object,
             opened: false,
@@ -97,7 +119,7 @@ impl OrderManager {
     }
 
     pub fn start(&mut self) {
-        self.api.start_websocket(&self.auth);
+        self.api.start_websocket(&self.auth.as_ref().borrow());
         self.opened = true;
         self.running = true;
     }

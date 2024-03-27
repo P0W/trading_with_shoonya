@@ -21,10 +21,10 @@ pub mod websocket {
     }
 
     pub trait WebSocketCallback {
-        fn on_open(&self, res: &serde_json::Value);
-        fn on_error(&self, res: &serde_json::Value);
-        fn subscribe_callback(&self, res: &serde_json::Value);
-        fn order_callback(&self, res: &serde_json::Value);
+        fn on_open(&mut self, res: &serde_json::Value);
+        fn on_error(&mut self, res: &serde_json::Value);
+        fn subscribe_callback(&mut self, res: &serde_json::Value);
+        fn order_callback(&mut self, res: &serde_json::Value);
     }
 
     pub struct WebSocketApp {
