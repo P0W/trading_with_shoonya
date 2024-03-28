@@ -323,7 +323,7 @@ class ShoonyaTransaction:
         if not ltp:
             self.logger.error("LTP not available for %s", order_data["tradingsymbol"])
             return
-        price = float(order_data["price"])
+        price = order_data["price"]
         diff_percent = (1 - (ltp / price)) * 100
         if diff_percent > 5:
             response = self.api.place_order(**order_data)
@@ -344,7 +344,7 @@ class ShoonyaTransaction:
                 or order["status"] != OrderStatus.OPEN
             ):
                 continue
-            (avgprice, qty) = self.transaction_manager.get_order_prices(
+            (last_modified_price, qty) = self.transaction_manager.get_order_prices(
                 tradingsymbol=tradingsymbol, remarks=remarks
             )
             if not avgprice or not qty:
@@ -354,11 +354,11 @@ class ShoonyaTransaction:
             if not ltp:
                 self.logger.error("LTP not available for %s", tradingsymbol)
                 continue
-            # rounded_ltp = round_to_point5(avgprice * book_profit_factor)
             ## if difference between ltp and rounded_ltp is more than 2%
-            diff_percent = (1 - (ltp / (avgprice * book_profit_factor))) * 100
+            factored_price = last_modified_price * book_profit_factor
+            diff_percent = (1 - (ltp / factored_price)) * 100
             if diff_percent > 5:
-                sl_price = round_to_point5(avgprice * book_profit_factor)
+                sl_price = round_to_point5(factored_price)
                 sl_trigger = sl_price - 0.5
                 ## modify the stop loss order
                 self.api.modify_order(

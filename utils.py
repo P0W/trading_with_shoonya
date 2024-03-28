@@ -365,7 +365,7 @@ def parse_args():
     Parse the arguments
     """
     args = argparse.ArgumentParser(
-        description="Straddle orders for NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY and USDINR"
+        description="Straddle orders for NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY, SENSEX, BANKEX, CRUDEOIL and USDINR"
     )
     args.add_argument("--force", action="store_true", default=False, help="Force login")
     args.add_argument(
@@ -379,6 +379,7 @@ def parse_args():
             "SENSEX",
             "BANKEX",
             "CRUDEOIL",
+            "USDINR",
         ],
     )
     args.add_argument("--qty", required=True, type=int, help="Quantity to trade")
