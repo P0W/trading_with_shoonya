@@ -116,3 +116,5 @@ if __name__ == "__main__":
     api = client_shoonya.ShoonyaApiPy(cred_file="../cred.yml", force_login=False)
     om = OrderManager(api, {})
     om.start()
+    om.subscribe("MCX|426261")
+    time.sleep(20)

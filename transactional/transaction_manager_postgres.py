@@ -379,3 +379,38 @@ class TransactionManager(order_manager.OrderManager):
             self.logger.info("Test complete")
             return True
         return False
+
+    def get_ltp(self, tradingsymbol: str) -> float:
+        """
+        Get the last traded price of the symbol
+        """
+        with self.getcursor() as cursor:
+            cursor.execute(
+                """SELECT ltp
+                FROM liveltp
+                JOIN symbols ON liveltp.symbolcode = symbols.symbolcode
+                WHERE symbols.tradingsymbol = %s AND symbols.instance = %s
+                """,
+                (tradingsymbol, self.instance_id),
+            )
+            row = cursor.fetchone()
+            if row is not None:
+                return float(row.ltp)
+        return None
+    
+    def get_placed_price(self, norenordno: str) -> float:
+        """
+        Get the placed price of the order
+        """
+        with self.getcursor() as cursor:
+            cursor.execute(
+                """SELECT avgprice
+                FROM transactions
+                WHERE norenordno = %s AND instance = %s
+                """,
+                (norenordno, self.instance_id),
+            )
+            row = cursor.fetchone()
+            if row is not None:
+                return float(row.avgprice)
+        return None

@@ -275,6 +275,49 @@ class ShoonyaTransaction:
         ## Wait for 5 seconds
         time.sleep(5)
 
+    @delay_decorator(delay=10)
+    def modify_book_profit(
+        self,
+        book_profit_factor: float,
+        tradingsymbol: str,
+        qty: int,
+        book_profit_remarks: str,
+    ):
+        """Modify or place book profit order"""
+        if book_profit_remarks in self.order_queue:
+            ## Not yet placed, still in order queue
+            return False
+        ltp = self.transaction_manager.get_ltp(tradingsymbol)
+        if ltp:
+            ## check if book_profit order is already placed but not yet executed
+            norenordno, _ = self.transaction_manager.get_for_remarks(
+                book_profit_remarks, OrderStatus.OPEN
+            )
+            if norenordno:
+                rounded_ltp = round_to_point5(ltp * book_profit_factor)
+                response = self.api.modify_order(
+                    orderno=norenordno,
+                    exchange=get_exchange(tradingsymbol),
+                    tradingsymbol=tradingsymbol,
+                    newquantity=qty,
+                    newprice_type="LMT",
+                    newprice=rounded_ltp,
+                )
+                ## log all the modifications and the arguments
+                self.logger.info("Order modified: %s", response)
+                self.logger.debug(
+                    "Order modified: %s | %s | %s | %s | %s | %s",
+                    norenordno,
+                    get_exchange(tradingsymbol),
+                    tradingsymbol,
+                    qty,
+                    "LMT",
+                    rounded_ltp,
+                )
+            else:
+                return True
+        return False
+
 
 ## pylint: disable=too-many-locals, too-many-statements
 def main(args):
@@ -366,7 +409,7 @@ def main(args):
             sl_ltp = float(strikes_data[f"{item}_sl_ltp"])
             sl_ltp = round_to_point5(sl_ltp * sl_factor)
             trigger = sl_ltp - 0.5
-            book_profit_ltp = round_to_point5(ltp * book_profit)  ## 20% of premium left
+            book_profit_ltp = round_to_point5(ltp * book_profit)
             code_sl = f"{strikes_data[f'{item}_sl_code']}"
 
             shoonya_transaction.place_order(  ## Place straddle order
@@ -460,7 +503,12 @@ def main(args):
                 remarks=f"{subscribe_msg}_unsubscribe",
                 parent_remarks=subscribe_msg,
             )
-
+            shoonya_transaction.modify_book_profit(
+                book_profit_factor=book_profit,
+                tradingsymbol=symbol,
+                qty=qty,
+                book_profit_remarks=f"{subscribe_msg}_book_profit",
+            )
             shoonya_transaction.display_order_queue()
 
 
