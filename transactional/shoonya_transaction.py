@@ -275,48 +275,43 @@ class ShoonyaTransaction:
         ## Wait for 5 seconds
         time.sleep(5)
 
-    @delay_decorator(delay=10)
-    def modify_book_profit(
-        self,
-        book_profit_factor: float,
-        tradingsymbol: str,
-        qty: int,
-        book_profit_remarks: str,
-    ):
-        """Modify or place book profit order"""
-        if book_profit_remarks in self.order_queue:
-            ## Not yet placed, still in order queue
-            return False
-        ltp = self.transaction_manager.get_ltp(tradingsymbol)
-        if ltp:
-            ## check if book_profit order is already placed but not yet executed
-            norenordno, _ = self.transaction_manager.get_for_remarks(
-                book_profit_remarks, OrderStatus.OPEN
+    @delay_decorator(delay=15)
+    def modify_book_profit(self, book_profit_factor: float, qty: int):
+        """Modify book profit order"""
+        all_orders = self.transaction_manager.get_orders()
+        for order in all_orders:
+            norenordno = order["norenordno"]
+            tradingsymbol = order["tradingsymbol"]
+            ## filter order with remarks and OPEN status
+            if (
+                "_book_profit" not in order["remarks"]
+                or order["status"] != OrderStatus.OPEN
+            ):
+                continue
+            ltp = self.transaction_manager.get_ltp(tradingsymbol)
+            if not ltp:
+                self.logger.error("LTP not available for %s", tradingsymbol)
+                continue
+            rounded_ltp = round_to_point5(ltp * book_profit_factor)
+            response = self.api.modify_order(
+                orderno=norenordno,
+                exchange=get_exchange(tradingsymbol),
+                tradingsymbol=tradingsymbol,
+                newquantity=qty,
+                newprice_type="LMT",
+                newprice=rounded_ltp,
             )
-            if norenordno:
-                rounded_ltp = round_to_point5(ltp * book_profit_factor)
-                response = self.api.modify_order(
-                    orderno=norenordno,
-                    exchange=get_exchange(tradingsymbol),
-                    tradingsymbol=tradingsymbol,
-                    newquantity=qty,
-                    newprice_type="LMT",
-                    newprice=rounded_ltp,
-                )
-                ## log all the modifications and the arguments
-                self.logger.info("Order modified: %s", response)
-                self.logger.debug(
-                    "Order modified: %s | %s | %s | %s | %s | %s",
-                    norenordno,
-                    get_exchange(tradingsymbol),
-                    tradingsymbol,
-                    qty,
-                    "LMT",
-                    rounded_ltp,
-                )
-            else:
-                return True
-        return False
+            self.logger.info("Order modified: %s", response)
+            self.logger.debug(
+                "Order modified: %s | %s | %s | %s | %s | %s",
+                norenordno,
+                get_exchange(tradingsymbol),
+                tradingsymbol,
+                qty,
+                "LMT",
+                rounded_ltp,
+            )
+        return True
 
 
 ## pylint: disable=too-many-locals, too-many-statements
@@ -503,11 +498,10 @@ def main(args):
                 remarks=f"{subscribe_msg}_unsubscribe",
                 parent_remarks=subscribe_msg,
             )
+            ## Modify book profit order
             shoonya_transaction.modify_book_profit(
                 book_profit_factor=book_profit,
-                tradingsymbol=symbol,
                 qty=qty,
-                book_profit_remarks=f"{subscribe_msg}_book_profit",
             )
             shoonya_transaction.display_order_queue()
 

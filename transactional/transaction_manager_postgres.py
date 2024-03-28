@@ -397,20 +397,3 @@ class TransactionManager(order_manager.OrderManager):
             if row is not None:
                 return float(row.ltp)
         return None
-
-    def get_placed_price(self, norenordno: str) -> float:
-        """
-        Get the placed price of the order
-        """
-        with self.getcursor() as cursor:
-            cursor.execute(
-                """SELECT avgprice
-                FROM transactions
-                WHERE norenordno = %s AND instance = %s
-                """,
-                (norenordno, self.instance_id),
-            )
-            row = cursor.fetchone()
-            if row is not None:
-                return float(row.avgprice)
-        return None
