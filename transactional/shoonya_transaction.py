@@ -313,6 +313,64 @@ class ShoonyaTransaction:
             )
         return True
 
+    def place_book_sl(self, order_data: Dict):
+        """Place book stop loss order"""
+        remarks = order_data["remarks"]
+        if remarks not in self.order_queue:
+            return  ## Already placed
+        ## check ltp of the symbol
+        ltp = self.transaction_manager.get_ltp(order_data["tradingsymbol"])
+        if not ltp:
+            self.logger.error("LTP not available for %s", order_data["tradingsymbol"])
+            return
+        price = float(order_data["price"])
+        diff_percent = (1 - (ltp / price)) * 100
+        if diff_percent > 5:
+            response = self.api.place_order(**order_data)
+            self.logger.info("Book Stop loss order placed: %s", response)
+            self.order_queue.remove(remarks)
+
+    @delay_decorator(delay=20)
+    def modify_sl(self, book_profit_factor: float):
+        """Modify stop loss order"""
+        all_orders = self.transaction_manager.get_orders()
+        for order in all_orders:
+            norenordno = order["norenordno"]
+            tradingsymbol = order["tradingsymbol"]
+            ## filter order with remarks and OPEN status
+            remarks = order["remarks"]
+            if (
+                not remarks.endswith("_book_profit")
+                or order["status"] != OrderStatus.OPEN
+            ):
+                continue
+            (avgprice, qty) = self.transaction_manager.get_order_prices(
+                tradingsymbol=tradingsymbol, remarks=remarks
+            )
+            if not avgprice or not qty:
+                self.logger.error("Avgprice or qty not available for %s", tradingsymbol)
+                continue
+            ltp = self.transaction_manager.get_ltp(tradingsymbol)
+            if not ltp:
+                self.logger.error("LTP not available for %s", tradingsymbol)
+                continue
+            # rounded_ltp = round_to_point5(avgprice * book_profit_factor)
+            ## if difference between ltp and rounded_ltp is more than 2%
+            diff_percent = (1 - (ltp / (avgprice * book_profit_factor))) * 100
+            if diff_percent > 5:
+                sl_price = round_to_point5(avgprice * book_profit_factor)
+                sl_trigger = sl_price - 0.5
+                ## modify the stop loss order
+                self.api.modify_order(
+                    orderno=norenordno,
+                    exchange=get_exchange(tradingsymbol),
+                    tradingsymbol=tradingsymbol,
+                    newquantity=qty,
+                    newprice_type="SL-LMT",
+                    newprice=sl_price,
+                    newtrigger_price=sl_trigger,
+                )
+
 
 ## pylint: disable=too-many-locals, too-many-statements
 def main(args):
@@ -458,23 +516,38 @@ def main(args):
                 parent_remarks=f"{subscribe_msg}_stop_loss",
                 parent_status=OrderStatus.COMPLETE,
             )
-            shoonya_transaction.place_order(  ## Place book profit order,
-                ## if stop loss is placed (TRIGGER_PENDING)
+            # shoonya_transaction.place_order(  ## Place book profit order,
+            #     ## if stop loss is placed (TRIGGER_PENDING)
+            #     order_data={
+            #         "buy_or_sell": "B",
+            #         "product_type": "M",  ## NRML
+            #         "exchange": get_exchange(symbol),
+            #         "tradingsymbol": symbol,
+            #         "quantity": qty,
+            #         "discloseqty": 0,
+            #         "price_type": "LMT",
+            #         "price": book_profit_ltp,
+            #         "trigger_price": None,
+            #         "retention": "DAY",
+            #         "remarks": f"{subscribe_msg}_book_profit",
+            #     },
+            #     parent_remarks=f"{subscribe_msg}_stop_loss",
+            #     parent_status=OrderStatus.TRIGGER_PENDING,
+            # )
+            shoonya_transaction.place_book_sl(  ## Place book stop loss order,
                 order_data={
                     "buy_or_sell": "B",
-                    "product_type": "M",  ## NRML
+                    "product_type": "M",
                     "exchange": get_exchange(symbol),
                     "tradingsymbol": symbol,
                     "quantity": qty,
                     "discloseqty": 0,
-                    "price_type": "LMT",
+                    "price_type": "SL-LMT",
                     "price": book_profit_ltp,
-                    "trigger_price": None,
+                    "trigger_price": (book_profit_ltp - 0.5),
                     "retention": "DAY",
                     "remarks": f"{subscribe_msg}_book_profit",
-                },
-                parent_remarks=f"{subscribe_msg}_stop_loss",
-                parent_status=OrderStatus.TRIGGER_PENDING,
+                }
             )
             shoonya_transaction.cancel_on_book_profit(  ## Cancel stop loss order,
                 ## if book profit is COMPLETE
@@ -499,10 +572,12 @@ def main(args):
                 parent_remarks=subscribe_msg,
             )
             ## Modify book profit order
-            shoonya_transaction.modify_book_profit(
-                book_profit_factor=book_profit,
-                qty=qty,
-            )
+            # shoonya_transaction.modify_book_profit(
+            #     book_profit_factor=book_profit,
+            #     qty=qty,
+            # )
+            ## Modify stop loss order
+            shoonya_transaction.modify_sl(book_profit_factor=book_profit)
             shoonya_transaction.display_order_queue()
 
 

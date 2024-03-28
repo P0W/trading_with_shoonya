@@ -116,6 +116,18 @@ class TransactionManager(order_manager.OrderManager):
                 instance TEXT,
                 PRIMARY KEY (symbolcode, instance))"""
             )
+
+            ## create a table order_prices schema : (tradingsymbol, price, qty, remarks, instance)
+            table_name = "order_prices"
+            self.logger.info("Creating table order_prices")
+            cursor.execute(
+                f"""CREATE TABLE IF NOT EXISTS {table_name}
+                (tradingsymbol TEXT PRIMARY KEY,
+                price REAL,
+                qty INTEGER,
+                remarks TEXT,
+                instance TEXT)"""
+            )
             cursor.connection.commit()
 
     def _check_for_self(self, remarks: str) -> bool:
@@ -139,6 +151,8 @@ class TransactionManager(order_manager.OrderManager):
         if "fillshares" in order_data and "flprc" in order_data:
             avgprice = order_data["flprc"]
             qty = order_data["fillshares"]
+        price = order_data["prc"]  ## always present
+        qty = order_data["qty"]  ## always present
         buysell = order_data["trantype"]
         tradingsymbol = order_data["tsym"]
         status = order_data["status"]
@@ -176,6 +190,33 @@ class TransactionManager(order_manager.OrderManager):
             cursor.connection.commit()
         self.logger.debug(
             "Upserting into table transactions: %s", json.dumps(upsert_data, indent=2)
+        )
+
+        ## update the order_prices table
+        upsert_data = {
+            "tradingsymbol": tradingsymbol,
+            "price": price,
+            "qty": qty,
+            "remarks": remarks,
+            "instance": self.instance_id,
+        }
+        with self.getcursor() as cursor:
+            cursor.execute(
+                """INSERT INTO order_prices
+                (tradingsymbol, price, qty, remarks, instance)
+                VALUES (%(tradingsymbol)s, %(price)s, %(qty)s, %(remarks)s, %(instance)s)
+                ON CONFLICT (tradingsymbol) DO UPDATE
+                SET price = %(price)s,
+                qty = %(qty)s,
+                remarks = %(remarks)s,
+                instance = %(instance)s
+                """,
+                upsert_data,
+            )
+            cursor.connection.commit()
+        self.logger.debug(
+            "Upserting into table order_prices: %s",
+            json.dumps(upsert_data, indent=2),
         )
 
     def _event_handler_feed_update(self, tick_data: Dict):
@@ -397,3 +438,20 @@ class TransactionManager(order_manager.OrderManager):
             if row is not None:
                 return float(row.ltp)
         return None
+
+    def get_order_prices(self, tradingsymbol: str, remarks: str) -> Tuple[float, int]:
+        """
+        Get the order price and quantity of the symbol
+        """
+        with self.getcursor() as cursor:
+            cursor.execute(
+                """SELECT price, qty
+                FROM order_prices
+                WHERE tradingsymbol = %s AND instance = %s AND remarks = %s
+                """,
+                (tradingsymbol, self.instance_id, remarks),
+            )
+            row = cursor.fetchone()
+            if row is not None:
+                return float(row.price), int(row.qty)
+        return None, None
