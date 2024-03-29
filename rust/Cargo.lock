@@ -1310,6 +1310,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "redis-async"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48732d38d64794df698e1f6410d1650088ee9bf7cea405fbb0adb24189217a8f"
+dependencies = [
+ "bytes 1.5.0",
+ "futures-channel",
+ "futures-sink",
+ "futures-util",
+ "log",
+ "pin-project",
+ "socket2",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1431,6 +1448,7 @@ dependencies = [
 name = "rust"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "clap",
  "colored",
@@ -1621,6 +1639,7 @@ dependencies = [
  "futures-util",
  "log",
  "redis",
+ "redis-async",
  "reqwest 0.12.2",
  "serde_json",
  "serde_yaml",

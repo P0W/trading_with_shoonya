@@ -9,7 +9,6 @@ edition = "2021"
 serde_json = "1.0.108"
 reqwest = "0.12.2"
 chrono = "0.4.31"
-redis = "0.25.2"
 serde_yaml = "0.9.29"
 totp-rs = "5.4.0"
 sha2 = "0.10.8"
@@ -19,3 +18,5 @@ tokio = { version = "1.36.0", features = ["full"] }
 tokio-tungstenite = { version = "0.21.0", features = ["native-tls"] }
 futures-util = { version = "0.3.30", features = ["alloc", "std", "cfg-target-has-atomic", "tokio-io", "portable-atomic"] }
 async-trait = "0.1.79"
+redis-async = "0.17.1"
+redis = "0.25.2"

@@ -259,7 +259,9 @@ async fn main() {
         info!("PnL: {} {}", pnl, pnl_str);
     };
 
-    let websocket = WebSocketApp::new(WebSocketCallbackHandler::new(pnl_feed));
+    let callback = WebSocketCallbackHandler::new(pnl_feed).await.unwrap();
+
+    let websocket = WebSocketApp::new(callback);
     let auth_ptr = Rc::new(RefCell::new(auth));
 
     let mut order_manager = order_manager::OrderManager::new(websocket, auth_ptr.clone());
@@ -314,7 +316,7 @@ mod tests {
         let pnl_feed = |pnl: f64, pnl_str: String| {
             info!("PnL: {} {}", pnl, pnl_str);
         };
-        let callback = WebSocketCallbackHandler::new(pnl_feed);
+        let callback = WebSocketCallbackHandler::new(pnl_feed).await.unwrap();
         let mut order_manager = order_manager::OrderManager::new(
             WebSocketApp::new(callback),
             Rc::new(RefCell::new(auth)),

@@ -8,6 +8,7 @@ pub mod websocket {
     use std::sync::Arc;
     use tokio::net::TcpStream;
     use tokio::sync::Mutex;
+    use tokio::time::{sleep, Duration};
     use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
     #[async_trait]
@@ -16,12 +17,13 @@ pub mod websocket {
         async fn unsubscribe(&mut self, symbols: &Vec<String>);
     }
 
+    #[async_trait]
     pub trait WebSocketCallback {
-        fn on_open(&mut self, res: &serde_json::Value);
-        fn on_error(&mut self, res: &serde_json::Value);
-        fn subscribe_callback(&mut self, res: &serde_json::Value);
-        fn order_callback(&mut self, res: &serde_json::Value);
-        fn on_connect(&mut self, res: &serde_json::Value);
+        async fn on_open(&mut self, res: &serde_json::Value);
+        async fn on_error(&mut self, res: &serde_json::Value);
+        async fn subscribe_callback(&mut self, res: &serde_json::Value);
+        async fn order_callback(&mut self, res: &serde_json::Value);
+        async fn on_connect(&mut self, res: &serde_json::Value);
     }
 
     pub struct WebSocketApp {
@@ -40,69 +42,93 @@ pub mod websocket {
         }
 
         async fn send_data(&mut self, data: serde_json::Value) -> bool {
-            match self.websocket.as_mut() {
-                Some(ws) => {
-                    let ws = ws.try_lock();
-                    match ws {
-                        Ok(mut ws) => {
-                            let _ = ws
-                                .send(tokio_tungstenite::tungstenite::Message::Text(
-                                    data.to_string(),
-                                ))
-                                .await;
-                            true
-                        }
-                        Err(_) => {
-                            info!("Lock not acquired, while sending data");
-                            false
+            let mut delay = Duration::from_millis(10);
+            loop {
+                match self.websocket.as_mut() {
+                    Some(ws) => {
+                        let ws = ws.try_lock();
+                        match ws {
+                            Ok(mut ws) => {
+                                let send_result = ws
+                                    .send(tokio_tungstenite::tungstenite::Message::Text(
+                                        data.to_string(),
+                                    ))
+                                    .await;
+                                match send_result {
+                                    Ok(_) => return true,
+                                    Err(_) => {
+                                        info!("Failed to send data, retrying in {:?}", delay);
+                                        sleep(delay).await;
+                                        delay *= 2; // Double the delay for the next iteration
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                info!("Lock not acquired, while sending data");
+                                return false;
+                            }
                         }
                     }
-                }
-                None => {
-                    error!("Websocket not connected");
-                    false
+                    None => {
+                        error!("Websocket not connected");
+                        return false;
+                    }
                 }
             }
         }
 
-        pub async fn close_websocket(&mut self) {
+        pub async fn close_websocket(&mut self) -> Result<(), Box<dyn std::error::Error>> {
             if let Some(ws) = self.websocket.as_mut() {
-                let mut ws = ws.try_lock().unwrap();
-                ws.close(None).await.unwrap();
+                let ws_lock = ws.try_lock();
+                match ws_lock {
+                    Ok(mut ws) => {
+                        ws.close(None).await?;
+                    }
+                    Err(e) => {
+                        error!("Failed to acquire lock on websocket: {}", e);
+                        return Err(Box::new(e));
+                    }
+                }
             }
             if let Some(ws_thread) = self.ws_thread.as_mut() {
-                ws_thread.await.unwrap();
+                ws_thread.await?;
             }
+            info!("Websocket closed successfully");
+            Ok(())
         }
-
-        pub async fn start_websocket(&mut self, auth: &Auth) {
-            let (ws_original, _) = connect_async(WEBSOCKET_ENDPOINT)
-                .await
-                .expect("Failed to connect");
+        pub async fn start_websocket(
+            &mut self,
+            auth: &Auth,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let (ws_original, _) = connect_async(WEBSOCKET_ENDPOINT).await?;
             debug!("Connected to websocket");
             self.websocket = Some(Arc::new(Mutex::new(ws_original)));
-            {
-                let values = json!(
-                    {
-                        "t": "c",
-                        "uid": auth.username,
-                        "actid": auth.username,
-                        "susertoken": auth.susertoken,
-                        "source": "API",
-                    }
-                );
-                let sucess = self.send_data(values).await;
-                if sucess {
-                    info!("Websocket connected");
-                } else {
-                    error!("Failed to connect websocket");
+
+            let values = json!(
+                {
+                    "t": "c",
+                    "uid": auth.username,
+                    "actid": auth.username,
+                    "susertoken": auth.susertoken,
+                    "source": "API",
                 }
-                self.callback
-                    .as_mut()
-                    .unwrap()
-                    .try_lock()
-                    .unwrap()
-                    .on_connect(&serde_json::Value::Null);
+            );
+            let success = self.send_data(values).await;
+            if success {
+                info!("Websocket connected");
+            } else {
+                error!("Failed to connect websocket");
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Failed to connect websocket",
+                )));
+            }
+
+            if let Some(callback) = &self.callback {
+                let mut callback = callback.try_lock().map_err(|_| {
+                    std::io::Error::new(std::io::ErrorKind::Other, "Failed to lock callback")
+                })?;
+                callback.on_connect(&serde_json::Value::Null).await;
             }
 
             let callback_clone = self.callback.clone().unwrap();
@@ -121,6 +147,8 @@ pub mod websocket {
                 }
             });
             self.ws_thread = Some(ws_thread);
+
+            Ok(())
         }
     }
 
@@ -132,6 +160,7 @@ pub mod websocket {
         match message {
             Some(tokio_tungstenite::tungstenite::Message::Text(text)) => {
                 let json: Result<serde_json::Value, _> = serde_json::from_str(text.as_str());
+                let mut callback = callback_clone.try_lock().unwrap();
                 match json {
                     Ok(res) => {
                         // Use the data
@@ -140,16 +169,17 @@ pub mod websocket {
                             || res["t"] == "dk"
                             || res["t"] == "df"
                         {
-                            callback_clone.try_lock().unwrap().subscribe_callback(&res);
+                            debug!("Unknown message --1: {:?}", res);
+                            let _ = callback.subscribe_callback(&res).await;
                         }
                         if res["t"] == "ck" && res["s"] != "OK" {
-                            callback_clone.try_lock().unwrap().on_error(&res);
+                            let _ = callback.on_error(&res).await;
                         }
                         if res["t"] == "om" {
-                            callback_clone.try_lock().unwrap().order_callback(&res);
+                            let _ = callback.order_callback(&res).await;
                         }
                         if res["t"] == "ck" && res["s"] == "OK" {
-                            callback_clone.try_lock().unwrap().on_open(&res);
+                            let _ = callback.on_open(&res).await;
                         } else {
                             debug!("Unknown message: {:?}", res);
                         }
@@ -168,10 +198,6 @@ pub mod websocket {
             }
             Some(tokio_tungstenite::tungstenite::Message::Binary(bin)) => {
                 debug!("Binary message: {:?}", bin);
-                callback_clone
-                    .try_lock()
-                    .unwrap()
-                    .on_error(&serde_json::Value::Null);
             }
             Some(tokio_tungstenite::tungstenite::Message::Close(cl)) => {
                 debug!("Close message: {:?}", cl);

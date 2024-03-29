@@ -1,5 +1,6 @@
 // order_manager.rs
 
+use async_trait::async_trait;
 use log::*;
 use serde_json;
 use shoonya::transaction::transaction::TransactionManager;
@@ -26,36 +27,40 @@ pub struct WebSocketCallbackHandler {
 }
 
 impl WebSocketCallbackHandler {
-    pub fn new(callback: fn(f64, String)) -> WebSocketCallbackHandler {
-        WebSocketCallbackHandler {
-            redis_transaction: TransactionManager::new(),
+    pub async fn new(
+        callback: fn(f64, String),
+    ) -> Result<WebSocketCallbackHandler, Box<dyn std::error::Error>> {
+        let redis_transaction = TransactionManager::new().await.unwrap();
+        Ok(WebSocketCallbackHandler {
+            redis_transaction,
             pnl_feed_callback: callback,
-        }
+        })
     }
 }
 
+#[async_trait]
 impl WebSocketCallback for WebSocketCallbackHandler {
-    fn on_open(&mut self, res: &serde_json::Value) {
+    async fn on_open(&mut self, res: &serde_json::Value) {
         info!("Websocket Opened {:?}", res);
     }
 
-    fn on_error(&mut self, res: &serde_json::Value) {
+    async fn on_error(&mut self, res: &serde_json::Value) {
         info!("Websocket Error {:?}", res);
     }
 
-    fn subscribe_callback(&mut self, tick_data: &serde_json::Value) {
+    async fn subscribe_callback(&mut self, tick_data: &serde_json::Value) {
         debug!("Tick Data: {:?}", tick_data);
-        self.redis_transaction.on_tick(tick_data);
-        let (pnl, pnl_str) = self.redis_transaction.get_pnl();
+        let _ = self.redis_transaction.on_tick(tick_data).await;
+        let (pnl, pnl_str) = self.redis_transaction.get_pnl().await;
         (self.pnl_feed_callback)(pnl, pnl_str);
     }
 
-    fn order_callback(&mut self, order_data: &serde_json::Value) {
+    async fn order_callback(&mut self, order_data: &serde_json::Value) {
         debug!("Order Data: {:?}", order_data);
-        self.redis_transaction.on_order(order_data);
+        let _ = self.redis_transaction.on_order(order_data).await;
     }
 
-    fn on_connect(&mut self, res: &serde_json::Value) {
+    async fn on_connect(&mut self, res: &serde_json::Value) {
         debug!("Connected to Websocket: {:?}", res);
     }
 }
