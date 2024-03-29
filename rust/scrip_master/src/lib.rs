@@ -1,13 +1,12 @@
 #![allow(dead_code)]
 pub mod scrips {
 
+    use common::utils::utils::{get_exchange_str, Exchange};
     use std::fs;
     use std::fs::File;
     use std::io;
     use std::path::Path;
     use zip::read::ZipArchive;
-    use common::utils::utils::{Exchange, get_exchange_str};
-    
 
     pub const DOWNLOAD_PATH: &str = "./downloads";
 
@@ -25,7 +24,7 @@ pub mod scrips {
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
         // convert exchange to string
-        let exchange = get_exchange_str (&exchange);
+        let exchange = get_exchange_str(&exchange);
 
         let download_file: String = format!("{}/{}_symbols_{}.txt", DOWNLOAD_PATH, exchange, today);
 
@@ -82,6 +81,16 @@ mod tests {
         // assert file exists
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
         let file = format!("{}/{}_symbols_{}.txt", scrips::DOWNLOAD_PATH, "BFO", today);
+        assert!(Path::new(&file).exists());
+    }
+
+    // test for MCX
+    #[test]
+    fn test_mcx() {
+        download_scrip(&Exchange::MCX);
+        // assert file exists
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let file = format!("{}/{}_symbols_{}.txt", scrips::DOWNLOAD_PATH, "MCX", today);
         assert!(Path::new(&file).exists());
     }
 }

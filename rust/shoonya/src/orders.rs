@@ -212,7 +212,11 @@ pub mod orders {
             }
 
             let url = format!("{}{}", HOST, PLACEORDER);
-            let payload = format!("jData={}&jKey={}", values.to_string(), self.auth.borrow().susertoken);
+            let payload = format!(
+                "jData={}&jKey={}",
+                values.to_string(),
+                self.auth.borrow().susertoken
+            );
             let client = reqwest::blocking::Client::new();
             let res: String = client
                 .post(&url)

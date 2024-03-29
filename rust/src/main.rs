@@ -259,7 +259,8 @@ struct Cli {
     closest_ltp: f64,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Cli::parse();
 
     let log_level = match args.log_level.as_str() {
@@ -275,7 +276,7 @@ fn main() {
 
     let mut auth = Auth::new();
 
-    auth.login(args.credentials_file.as_str(), args.force);
+    let _ = auth.login(args.credentials_file.as_str(), args.force).await;
 
     // let order_book = get_order_book(&auth);
 
@@ -294,16 +295,16 @@ fn main() {
         pretty_print_json(&straddle_strikes, 3)
     );
 
-    let pnl_feed = Box::new(|pnl: f64, pnl_str: String| {
+    let pnl_feed = |pnl: f64, pnl_str: String| {
         info!("PnL: {} {}", pnl, pnl_str);
-    });
+    };
 
-    let websocket = WebSocketApp::new(WebSocketCallbackHandler::new(Some(pnl_feed)));
+    let websocket = WebSocketApp::new(WebSocketCallbackHandler::new(pnl_feed));
     let auth_ptr = Rc::new(RefCell::new(auth));
 
     let mut order_manager = order_manager::OrderManager::new(websocket, auth_ptr.clone());
 
-    order_manager.start();
+    let _ = order_manager.start().await;
 
     // subscribe to the symbols from the straddle_strikes
     let exchange = "NFO";
@@ -313,7 +314,7 @@ fn main() {
         let trading_symbol = straddle_strikes[format!("{}_symbol", item)]
             .as_str()
             .unwrap();
-        order_manager.subscribe(vec![subscribe_code]);
+        let _ = order_manager.subscribe(vec![subscribe_code]).await;
         // place order for the symbol
         let qty = args.qty;
         let _ = OrderBuilder::new(auth_ptr.clone())
@@ -327,5 +328,41 @@ fn main() {
         if order_manager.day_over() {
             break;
         }
+    }
+}
+
+// add a test for websocket callback
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use crate::order_manager::WebSocketCallbackHandler;
+
+    #[tokio::test]
+    async fn test_websocket_callback() {
+        let mut auth = Auth::new();
+        let credentials_file = "../cred.yml";
+        logger::init_logger("shoonya_rust_test", log::LevelFilter::Debug);
+
+        let _ = auth.login(credentials_file, true).await;
+
+        // awit until the login is complete
+        assert!(auth.susertoken.len() > 0);
+        // display the susertoken
+        info!("Token: {}", auth.susertoken);
+        
+
+        let pnl_feed = |pnl: f64, pnl_str: String| {
+            info!("PnL: {} {}", pnl, pnl_str);
+        };
+        let callback = WebSocketCallbackHandler::new(pnl_feed);
+        let mut order_manager = order_manager::OrderManager::new(
+            WebSocketApp::new(callback),
+            Rc::new(RefCell::new(auth)),
+        );
+        let _ = order_manager.start().await;
+        let _ = order_manager.subscribe(vec!["MCX|426261".to_string()]).await;
+        let _= order_manager.stop().await;
+        
     }
 }

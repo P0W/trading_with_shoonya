@@ -22,13 +22,11 @@ pub struct OrderManager {
 
 pub struct WebSocketCallbackHandler {
     pub redis_transaction: TransactionManager,
-    pub pnl_feed_callback: Option<Box<dyn Fn(f64, String) + Send>>,
+    pub pnl_feed_callback: fn(f64, String),
 }
 
 impl WebSocketCallbackHandler {
-    pub fn new(
-        callback: Option<Box<dyn Fn(f64, String) + Send + 'static>>,
-    ) -> WebSocketCallbackHandler {
+    pub fn new(callback: fn(f64, String)) -> WebSocketCallbackHandler {
         WebSocketCallbackHandler {
             redis_transaction: TransactionManager::new(),
             pnl_feed_callback: callback,
@@ -46,15 +44,19 @@ impl WebSocketCallback for WebSocketCallbackHandler {
     }
 
     fn subscribe_callback(&mut self, tick_data: &serde_json::Value) {
+        debug!("Tick Data: {:?}", tick_data);
         self.redis_transaction.on_tick(tick_data);
         let (pnl, pnl_str) = self.redis_transaction.get_pnl();
-        if let Some(callback) = self.pnl_feed_callback.as_mut() {
-            callback(pnl, pnl_str);
-        }
+        (self.pnl_feed_callback)(pnl, pnl_str);
     }
 
     fn order_callback(&mut self, order_data: &serde_json::Value) {
+        debug!("Order Data: {:?}", order_data);
         self.redis_transaction.on_order(order_data);
+    }
+
+    fn on_connect(&mut self, res: &serde_json::Value) {
+        debug!("Connected to Websocket: {:?}", res);
     }
 }
 
@@ -76,7 +78,7 @@ impl OrderManager {
                 info!("Resubscribing to {:?}", self.subscribed_symbols);
                 // Convert HashSet to Vec<String>
                 let symbols: Vec<String> = self.subscribed_symbols.iter().cloned().collect();
-                self.api.subscribe(&symbols);
+                let _ = self.api.subscribe(&symbols);
             }
         } else {
             info!("Websocket Opened");
@@ -85,16 +87,16 @@ impl OrderManager {
     }
 
     #[allow(dead_code)]
-    pub fn subscribe(&mut self, symbols: Vec<String>) {
+    pub async fn subscribe(&mut self, symbols: Vec<String>) {
         // Convert HashSet to Vec<String>
         let symbols: Vec<String> = symbols.iter().cloned().collect();
-        self.api.subscribe(&symbols);
+        let _ = self.api.subscribe(&symbols).await;
         self.subscribed_symbols.extend(symbols);
         info!("Current subscribed_symbols: {:?}", self.subscribed_symbols);
     }
 
     #[allow(dead_code)]
-    pub fn unsubscribe(&mut self, symbols: Vec<String>) {
+    pub async fn unsubscribe(&mut self, symbols: Vec<String>) {
         let copy = self.subscribed_symbols.clone();
         for symbol in symbols {
             if self.subscribed_symbols.contains(&symbol) {
@@ -104,7 +106,7 @@ impl OrderManager {
         }
         // Convert HashSet to Vec<String>
         let symbols: Vec<String> = copy.iter().cloned().collect();
-        self.api.unsubscribe(&symbols);
+        let _ = self.api.unsubscribe(&symbols).await;
         debug!("Current subscribed_symbols: {:?}", self.subscribed_symbols);
     }
 
@@ -118,9 +120,15 @@ impl OrderManager {
         false
     }
 
-    pub fn start(&mut self) {
-        self.api.start_websocket(&self.auth.as_ref().borrow());
+    pub async fn start(&mut self) {
+        let binding = self.auth.as_ref().borrow_mut();
+        let _thread = self.api.start_websocket(&binding).await;
         self.opened = true;
         self.running = true;
+    }
+
+    pub async fn stop(&mut self) {
+        let _ = self.api.close_websocket().await;
+        self.running = false;
     }
 }

@@ -15,5 +15,7 @@ totp-rs = "5.4.0"
 sha2 = "0.10.8"
 log = "0.4.20"
 common = { path = "../common"}
-tokio = "1.36.0"
-tungstenite = { version = "0.21.0", features = ["native-tls"] }
+tokio = { version = "1.36.0", features = ["full"] }
+tokio-tungstenite = { version = "0.21.0", features = ["native-tls"] }
+futures-util = { version = "0.3.30", features = ["alloc", "std", "cfg-target-has-atomic", "tokio-io", "portable-atomic"] }
+async-trait = "0.1.79"

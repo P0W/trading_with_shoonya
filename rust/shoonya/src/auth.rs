@@ -15,7 +15,7 @@ pub mod auth {
     }
 
     impl Auth {
-        pub fn login(&mut self, file_name: &str, force_login: bool) {
+        pub async fn login(&mut self, file_name: &str, force_login: bool) {
             const REDIS_URL: &str = "redis://127.0.0.1/";
             const TOKEN: &str = "access_token_shoonya";
 
@@ -35,7 +35,7 @@ pub mod auth {
                 _ => {
                     debug!("Token not found in cache");
                     // login and get the token
-                    let creds = self.get_creds(creds).unwrap();
+                    let creds = self.get_creds(creds).await.unwrap();
                     let token = creds["susertoken"].as_str().unwrap().to_string();
                     // set the token in redis with expiry of 2 hours
                     let _: () = con.set_ex(TOKEN, token, 7200).unwrap();
@@ -53,7 +53,7 @@ pub mod auth {
         }
 
         // read from a yml file provided by the user
-        fn get_creds(
+        async fn get_creds(
             &mut self,
             creds: serde_json::Value,
         ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
@@ -68,19 +68,21 @@ pub mod auth {
             let totp = TOTP::from_rfc6238(rfc).unwrap();
             let two_fa = totp.generate_current().unwrap();
 
-            let result = self._login(
-                creds["user"].as_str().unwrap(),
-                creds["pwd"].as_str().unwrap(),
-                &two_fa,
-                creds["vc"].as_str().unwrap(),
-                creds["apikey"].as_str().unwrap(),
-                creds["imei"].as_str().unwrap(),
-            );
+            let result = self
+                ._login(
+                    creds["user"].as_str().unwrap(),
+                    creds["pwd"].as_str().unwrap(),
+                    &two_fa,
+                    creds["vc"].as_str().unwrap(),
+                    creds["apikey"].as_str().unwrap(),
+                    creds["imei"].as_str().unwrap(),
+                )
+                .await;
 
             result
         }
 
-        fn _login(
+        async fn _login(
             &mut self,
             userid: &str,
             password: &str,
@@ -110,12 +112,23 @@ pub mod auth {
                 "imei": imei,
             });
 
-            let client = reqwest::blocking::Client::new();
-            let res: String = client
+            let client = reqwest::Client::new();
+            // let res: String = client
+            //     .post(&url)
+            //     .body(format!("jData={}", values.to_string()))
+            //     .send()?
+            //     .await?.
+            //     text()?;
+            // await the response
+            let res = client
                 .post(&url)
                 .body(format!("jData={}", values.to_string()))
-                .send()?
-                .text()?;
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
 
             let res_dict: serde_json::Value = serde_json::from_str(&res)?;
 
@@ -131,7 +144,7 @@ pub mod auth {
             Ok(res_dict)
         }
 
-        pub fn set_session(&mut self, userid: &str, password: &str, usertoken: &str) -> bool {
+        fn set_session(&mut self, userid: &str, password: &str, usertoken: &str) -> bool {
             self.username = userid.to_string();
             self.accountid = userid.to_string();
             self.password = password.to_string();

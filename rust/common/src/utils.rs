@@ -68,8 +68,6 @@ pub mod utils {
     }
 
     pub fn get_expiry_date(data: &Vec<serde_json::Value>, symbol: &str) -> String {
-        //let data = read_txt_file_as_csv(file_name);
-
         // find the closest expiry date to today
         let mut min_diff = 100000;
         let mut expiry_date = String::new();
