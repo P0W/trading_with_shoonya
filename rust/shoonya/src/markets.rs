@@ -4,26 +4,27 @@ pub mod markets {
         auth::auth::Auth,
         urls::urls::{GETQUOTES, GET_INDICES_LIST, HOST, OPTIONCHAIN},
     };
-    use common::utils::utils::{get_exchange_str, pretty_print_json, Exchange};
+    use async_trait::async_trait;
+    use common::utils::utils::{get_exchange_str, post_to_client, pretty_print_json, Exchange};
     use serde_json::json;
 
     fn _get_payload(susertoken: &str, values: &serde_json::Value) -> String {
         let payload = format!("jData={}&jKey={}", values.to_string(), susertoken);
-
         payload
     }
 
+    #[async_trait]
     pub trait Markets {
-        fn get_quote(&self, _exchange: &Exchange, _token: &str) -> f64 {
+        async fn get_quote(&self, _exchange: &Exchange, _token: &str) -> f64 {
             0.0
         }
-        fn get_indices(
+        async fn get_indices(
             &self,
             _exchange: &Exchange,
         ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
             Ok(serde_json::Value::Null)
         }
-        fn get_option_chain(
+        async fn get_option_chain(
             &self,
             exchange: &Exchange,
             tsym: &str,
@@ -31,8 +32,9 @@ pub mod markets {
         ) -> Result<serde_json::Value, Box<dyn std::error::Error>>;
     }
 
+    #[async_trait]
     impl Markets for Auth {
-        fn get_option_chain(
+        async fn get_option_chain(
             &self,
             exchange: &Exchange,
             tsym: &str,
@@ -50,10 +52,7 @@ pub mod markets {
             let url = format!("{}{}", HOST, OPTIONCHAIN);
             let payload = _get_payload(&self.susertoken, &values);
 
-            let client = reqwest::blocking::Client::new();
-            let res: String = client.post(&url).body(payload).send()?.text()?;
-
-            let res_dict: serde_json::Value = serde_json::from_str(&res)?;
+            let res_dict = post_to_client(url, payload).await;
             if let Some(obj) = res_dict.as_object() {
                 if obj.contains_key("stat") {
                     // "stat" is present in the response
@@ -73,7 +72,7 @@ pub mod markets {
             Ok(res_dict)
         }
 
-        fn get_indices(
+        async fn get_indices(
             &self,
             exchange: &Exchange,
         ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
@@ -86,15 +85,11 @@ pub mod markets {
             let url = format!("{}{}", HOST, GET_INDICES_LIST);
             let payload = _get_payload(&self.susertoken, &values);
 
-            let client = reqwest::blocking::Client::new();
-            let res: String = client.post(&url).body(payload).send()?.text()?;
-
-            let res_dict: serde_json::Value = serde_json::from_str(&res)?;
+            let res_dict = post_to_client(url, payload).await;
             if let Some(obj) = res_dict.as_object() {
                 if obj.contains_key("stat") {
                     // "stat" is present in the response
                     if obj["stat"] == "Ok" {
-                        // "stat" is "Ok"
                         return Ok(res_dict);
                     } else {
                         // "stat" is not "Ok"
@@ -109,7 +104,7 @@ pub mod markets {
             Ok(res_dict)
         }
 
-        fn get_quote(&self, exchange: &Exchange, token: &str) -> f64 {
+        async fn get_quote(&self, exchange: &Exchange, token: &str) -> f64 {
             let values = json!({
                 "ordersource": "API",
                 "exch": get_exchange_str(exchange),
@@ -120,16 +115,7 @@ pub mod markets {
             let url = format!("{}{}", HOST, GETQUOTES);
             let payload = _get_payload(&self.susertoken, &values);
 
-            let client = reqwest::blocking::Client::new();
-            let res: String = client
-                .post(&url)
-                .body(payload)
-                .send()
-                .unwrap()
-                .text()
-                .unwrap();
-
-            let res_dict: serde_json::Value = serde_json::from_str(&res).unwrap();
+            let res_dict = post_to_client(url, payload).await;
             if let Some(obj) = res_dict.as_object() {
                 if obj.contains_key("stat") {
                     // "stat" is present in the response

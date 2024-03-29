@@ -109,98 +109,10 @@ pub mod websocket {
             let websocket_clone = self.websocket.clone().unwrap();
             let ws_thread = tokio::spawn(async move {
                 loop {
-                    //debug!("Waiting for message");
                     match websocket_clone.try_lock() {
                         Ok(mut ws_locked) => {
-                            //debug!("Locked websocket");
-                            //assert!(ws_locked.next().await.is_some());
                             let message = ws_locked.try_next().await.unwrap();
-                            //debug!("Received message");
-                            match message {
-                                Some(tokio_tungstenite::tungstenite::Message::Text(text)) => {
-                                    let json: Result<serde_json::Value, _> =
-                                        serde_json::from_str(text.as_str());
-                                    match json {
-                                        Ok(res) => {
-                                            // Use the data
-                                            if res["t"] == "tk"
-                                                || res["t"] == "tf"
-                                                || res["t"] == "dk"
-                                                || res["t"] == "df"
-                                            {
-                                                callback_clone
-                                                    .try_lock()
-                                                    .unwrap()
-                                                    .subscribe_callback(&res);
-                                            }
-                                            if res["t"] == "ck" && res["s"] != "OK" {
-                                                callback_clone.try_lock().unwrap().on_error(&res);
-                                            }
-                                            if res["t"] == "om" {
-                                                callback_clone
-                                                    .try_lock()
-                                                    .unwrap()
-                                                    .order_callback(&res);
-                                            }
-                                            if res["t"] == "ck" && res["s"] == "OK" {
-                                                callback_clone.try_lock().unwrap().on_open(&res);
-                                            } else {
-                                                debug!("Unknown message: {:?}", res);
-                                            }
-                                        }
-                                        _ => {
-                                            println!("Error parsing JSON");
-                                        }
-                                    }
-                                }
-                                // Handle Ping messages
-                                Some(tokio_tungstenite::tungstenite::Message::Ping(_)) => {
-                                    let pong_msg = "{\"t\":\"h\"}".to_owned();
-                                    ws_locked
-                                        .send(tokio_tungstenite::tungstenite::Message::Text(
-                                            pong_msg,
-                                        ))
-                                        .await
-                                        .unwrap();
-                                }
-                                Some(tokio_tungstenite::tungstenite::Message::Binary(bin)) => {
-                                    debug!("Binary message: {:?}", bin);
-                                    callback_clone
-                                        .try_lock()
-                                        .unwrap()
-                                        .on_error(&serde_json::Value::Null);
-                                }
-                                // Handle Close, Frame, Pong messages
-                                Some(tokio_tungstenite::tungstenite::Message::Close(cl)) => {
-                                    debug!("Close message: {:?}", cl);
-                                    // callback_clone
-                                    //     .try_lock()
-                                    //     .unwrap()
-                                    //     .on_error(&serde_json::Value::Null);
-                                }
-                                Some(tokio_tungstenite::tungstenite::Message::Pong(pong)) => {
-                                    debug!("Pong message: {:?}", pong);
-                                    // callback_clone
-                                    //     .try_lock()
-                                    //     .unwrap()
-                                    //     .on_error(&serde_json::Value::Null);
-                                }
-                                Some(tokio_tungstenite::tungstenite::Message::Frame(frame)) => {
-                                    debug!("Frame message: {:?}", frame);
-                                    // callback_clone
-                                    //     .try_lock()
-                                    //     .unwrap()
-                                    //     .on_error(&serde_json::Value::Null);
-                                }
-                                None => {
-                                    // let json_msg = json!(
-                                    //     {
-                                    //         "msg": "No message received",
-                                    //     }
-                                    // );
-                                    //callback_clone.try_lock().unwrap().on_error(&json_msg);
-                                }
-                            }
+                            handle_message(message, &callback_clone, ws_locked).await;
                         }
                         Err(_) => {
                             debug!("Websocket cannot be locked!");
@@ -209,6 +121,68 @@ pub mod websocket {
                 }
             });
             self.ws_thread = Some(ws_thread);
+        }
+    }
+
+    async fn handle_message(
+        message: Option<tokio_tungstenite::tungstenite::Message>,
+        callback_clone: &Arc<Mutex<dyn WebSocketCallback + Send>>,
+        mut ws_locked: tokio::sync::MutexGuard<'_, WebSocketStream<MaybeTlsStream<TcpStream>>>,
+    ) {
+        match message {
+            Some(tokio_tungstenite::tungstenite::Message::Text(text)) => {
+                let json: Result<serde_json::Value, _> = serde_json::from_str(text.as_str());
+                match json {
+                    Ok(res) => {
+                        // Use the data
+                        if res["t"] == "tk"
+                            || res["t"] == "tf"
+                            || res["t"] == "dk"
+                            || res["t"] == "df"
+                        {
+                            callback_clone.try_lock().unwrap().subscribe_callback(&res);
+                        }
+                        if res["t"] == "ck" && res["s"] != "OK" {
+                            callback_clone.try_lock().unwrap().on_error(&res);
+                        }
+                        if res["t"] == "om" {
+                            callback_clone.try_lock().unwrap().order_callback(&res);
+                        }
+                        if res["t"] == "ck" && res["s"] == "OK" {
+                            callback_clone.try_lock().unwrap().on_open(&res);
+                        } else {
+                            debug!("Unknown message: {:?}", res);
+                        }
+                    }
+                    _ => {
+                        println!("Error parsing JSON");
+                    }
+                }
+            }
+            Some(tokio_tungstenite::tungstenite::Message::Ping(_)) => {
+                let pong_msg = "{\"t\":\"h\"}".to_owned();
+                ws_locked
+                    .send(tokio_tungstenite::tungstenite::Message::Text(pong_msg))
+                    .await
+                    .unwrap();
+            }
+            Some(tokio_tungstenite::tungstenite::Message::Binary(bin)) => {
+                debug!("Binary message: {:?}", bin);
+                callback_clone
+                    .try_lock()
+                    .unwrap()
+                    .on_error(&serde_json::Value::Null);
+            }
+            Some(tokio_tungstenite::tungstenite::Message::Close(cl)) => {
+                debug!("Close message: {:?}", cl);
+            }
+            Some(tokio_tungstenite::tungstenite::Message::Pong(pong)) => {
+                debug!("Pong message: {:?}", pong);
+            }
+            Some(tokio_tungstenite::tungstenite::Message::Frame(frame)) => {
+                debug!("Frame message: {:?}", frame);
+            }
+            None => {}
         }
     }
 

@@ -105,7 +105,11 @@ pub mod utils {
             let option_type = row["OptionType"].as_str().unwrap();
             let idx_symb = row["Symbol"].as_str().unwrap();
 
-            if idx_symb == index && expiry_date == expiry && sym == strike_price && option_type == opt {
+            if idx_symb == index
+                && expiry_date == expiry
+                && sym == strike_price
+                && option_type == opt
+            {
                 token = row["Token"].as_str().unwrap().to_string();
                 trading_symbol = row["TradingSymbol"].as_str().unwrap().to_string();
                 break;
@@ -140,6 +144,22 @@ pub mod utils {
             }
         }
         result
+    }
+
+    pub async fn post_to_client(url: String, payload: String) -> serde_json::Value {
+        let res = reqwest::Client::new()
+            .post(&url)
+            .body(payload)
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await;
+
+        match res {
+            Ok(res) => serde_json::from_str(&res).unwrap(),
+            Err(e) => serde_json::from_str(&e.to_string()).unwrap(),
+        }
     }
 }
 
@@ -196,7 +216,8 @@ mod tests {
             "NIFTY",
         );
         assert_eq!(result[0]["Exchange"], "NFO");
-        let (token, trading_symbol) = get_strike_info(&result, "NIFTY", &expiry_date, 21800.0, "CE");
+        let (token, trading_symbol) =
+            get_strike_info(&result, "NIFTY", &expiry_date, 21800.0, "CE");
         assert_eq!(token, "42216");
         //
         assert_eq!(trading_symbol, "NIFTY04JAN24C21800");

@@ -16,38 +16,7 @@ use log::*;
 
 use crate::order_manager::WebSocketCallbackHandler;
 
-#[allow(dead_code)]
-fn build_indices_map(auth: &Auth) -> std::collections::HashMap<String, String> {
-    let mut result = std::collections::HashMap::new();
-    let exchanges = [
-        Exchange::NSE,
-        Exchange::BFO,
-        Exchange::CDS,
-        Exchange::NFO,
-        Exchange::MCX,
-    ];
-    for exchange in exchanges.iter() {
-        let indices = auth.get_indices(exchange);
-        match indices {
-            Ok(indices) => {
-                let values = indices["values"].as_array().unwrap();
-                // values has {"idxname": "Nifty 50", "token": "2600"}
-                // create a hashmap of idxname -> token
-                for index in values {
-                    let idxname = index["idxname"].as_str().unwrap().to_string();
-                    let token = index["token"].as_str().unwrap().to_string();
-                    result.insert(idxname, token);
-                }
-            }
-            Err(e) => {
-                error!("Error Occured: for {} : {}", get_exchange_str(exchange), e);
-            }
-        }
-    }
-    result
-}
-
-fn get_straddle_strikes(auth: &Auth, index: &str, closest_price: f64) -> serde_json::Value {
+async fn get_straddle_strikes(auth: &Auth, index: &str, closest_price: f64) -> serde_json::Value {
     // get the config file
     let config_file = String::from("./common/config.json");
     let config = load_config(&config_file);
@@ -77,11 +46,11 @@ fn get_straddle_strikes(auth: &Auth, index: &str, closest_price: f64) -> serde_j
             std::process::exit(-1);
         }
     }
-    download_scrip(&exchange);
+    let _ = download_scrip(&exchange).await;
     let (scrip_data, expiry_date) = read_txt_file_as_csv(&file_name, &config_file, &index);
     info!("Expiry date: {}", expiry_date);
 
-    let index_quote = auth.get_quote(&index_exchange, index_token);
+    let index_quote = auth.get_quote(&index_exchange, index_token).await;
     let rounding = config["INDICES_ROUNDING"][index].as_f64().unwrap();
     let rounded_strike = (index_quote / rounding).round() * rounding;
 
@@ -90,8 +59,8 @@ fn get_straddle_strikes(auth: &Auth, index: &str, closest_price: f64) -> serde_j
     let (pe_code, pe_symbol) =
         get_strike_info(&scrip_data, &index, &expiry_date, rounded_strike, "PE");
 
-    let ce_quote = auth.get_quote(&exchange, &ce_code);
-    let pe_quote = auth.get_quote(&exchange, &pe_code);
+    let ce_quote = auth.get_quote(&exchange, &ce_code).await;
+    let pe_quote = auth.get_quote(&exchange, &pe_code).await;
 
     let straddle_preimum = ce_quote + pe_quote;
     let otm_strike_ce = rounded_strike + straddle_preimum;
@@ -111,15 +80,17 @@ fn get_straddle_strikes(auth: &Auth, index: &str, closest_price: f64) -> serde_j
     let (pe_code_sl, pe_symbol_sl) =
         get_strike_info(&scrip_data, &index, &expiry_date, otm_strike_pe, "PE");
 
-    let ce_quote_sl = auth.get_quote(&exchange, &ce_code_sl);
-    let pe_quote_sl = auth.get_quote(&exchange, &pe_code_sl);
+    let ce_quote_sl = auth.get_quote(&exchange, &ce_code_sl).await;
+    let pe_quote_sl = auth.get_quote(&exchange, &pe_code_sl).await;
 
     // max diff between ce_strike and otm_strike_ce and pe_strike and otm_strike_pe
     let max_diff = (otm_strike_ce - rounded_strike)
         .abs()
         .max((otm_strike_pe - rounded_strike).abs());
 
-    let opt_chain = auth.get_option_chain(&exchange, &ce_symbol, rounded_strike);
+    let opt_chain = auth
+        .get_option_chain(&exchange, &ce_symbol, rounded_strike)
+        .await;
     let mut stangle_data = serde_json::Value::Null;
     match opt_chain {
         Ok(opt_chain) => {
@@ -128,7 +99,7 @@ fn get_straddle_strikes(auth: &Auth, index: &str, closest_price: f64) -> serde_j
             for item in data.iter() {
                 let token = item["token"].as_str().unwrap();
                 let tsym = item["tsym"].as_str().unwrap();
-                let ltp = auth.get_quote(&exchange, &tsym);
+                let ltp = auth.get_quote(&exchange, &tsym).await;
                 let opttype = item["optt"].as_str().unwrap();
                 strikes.push((ltp, tsym, opttype, token));
             }
@@ -278,18 +249,7 @@ async fn main() {
 
     let _ = auth.login(args.credentials_file.as_str(), args.force).await;
 
-    // let order_book = get_order_book(&auth);
-
-    // match order_book {
-    //     Ok(order_book) => {
-    //         info!("Order book: {}", order_book);
-    //     }
-    //     Err(e) => {
-    //         info!("Error: {}", e);
-    //     }
-    // }
-
-    let straddle_strikes = get_straddle_strikes(&auth, args.index.as_str(), args.closest_ltp);
+    let straddle_strikes = get_straddle_strikes(&auth, args.index.as_str(), args.closest_ltp).await;
     info!(
         "Straddle strikes: {}",
         pretty_print_json(&straddle_strikes, 3)
@@ -350,7 +310,6 @@ mod tests {
         assert!(auth.susertoken.len() > 0);
         // display the susertoken
         info!("Token: {}", auth.susertoken);
-        
 
         let pnl_feed = |pnl: f64, pnl_str: String| {
             info!("PnL: {} {}", pnl, pnl_str);
@@ -361,8 +320,9 @@ mod tests {
             Rc::new(RefCell::new(auth)),
         );
         let _ = order_manager.start().await;
-        let _ = order_manager.subscribe(vec!["MCX|426261".to_string()]).await;
-        let _= order_manager.stop().await;
-        
+        let _ = order_manager
+            .subscribe(vec!["MCX|426261".to_string()])
+            .await;
+        let _ = order_manager.stop().await;
     }
 }

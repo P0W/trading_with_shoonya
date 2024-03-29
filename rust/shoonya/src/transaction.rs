@@ -1,5 +1,4 @@
 pub mod transaction {
-
     use redis::Commands;
     use serde_json;
     use std::{cell::RefCell, collections::HashMap};
@@ -39,8 +38,6 @@ pub mod transaction {
         }
 
         fn validate_self(&self, remark: String) -> bool {
-            println!("Validating self");
-            // if remark begins with self.instance
             if remark.starts_with(&self.instance) {
                 return true;
             }

@@ -10,7 +10,7 @@ pub mod scrips {
 
     pub const DOWNLOAD_PATH: &str = "./downloads";
 
-    pub fn download_scrip(exchange: &Exchange) {
+    pub async fn download_scrip(exchange: &Exchange) {
         let url = match exchange {
             Exchange::NSE => "https://api.shoonya.com/NSE_symbols.txt.zip",
             Exchange::NFO => "https://api.shoonya.com/NFO_symbols.txt.zip",
@@ -45,10 +45,10 @@ pub mod scrips {
             return;
         }
 
-        let client = reqwest::blocking::Client::new();
-        let response = client.get(url).send().unwrap();
+        let client = reqwest::Client::new();
+        let response = client.get(url).send().await.unwrap();
 
-        let bytes = response.bytes().unwrap();
+        let bytes = response.bytes().await.unwrap();
         let cursor = io::Cursor::new(bytes);
 
         let mut archive = ZipArchive::new(cursor).unwrap();
@@ -75,9 +75,9 @@ mod tests {
     use crate::scrips::download_scrip;
     use std::path::Path;
 
-    #[test]
-    fn it_works() {
-        download_scrip(&Exchange::BFO);
+    #[tokio::test]
+    async fn it_works() {
+        let _ = download_scrip(&Exchange::BFO).await;
         // assert file exists
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
         let file = format!("{}/{}_symbols_{}.txt", scrips::DOWNLOAD_PATH, "BFO", today);
@@ -85,9 +85,9 @@ mod tests {
     }
 
     // test for MCX
-    #[test]
-    fn test_mcx() {
-        download_scrip(&Exchange::MCX);
+    #[tokio::test]
+    async fn test_mcx() {
+        let _ = download_scrip(&Exchange::MCX).await;
         // assert file exists
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
         let file = format!("{}/{}_symbols_{}.txt", scrips::DOWNLOAD_PATH, "MCX", today);

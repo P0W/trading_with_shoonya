@@ -8,6 +8,7 @@ pub mod orders {
         auth::auth::Auth,
         urls::urls::{CANCELORDER, HOST, ORDERBOOK, PLACEORDER},
     };
+    use common::utils::utils::post_to_client;
     use serde_json::json;
 
     #[derive(Debug, Default)]
@@ -31,7 +32,9 @@ pub mod orders {
         pub trail_price: f64,
     }
 
-    pub fn get_order_book(auth: &Auth) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    pub async fn get_order_book(
+        auth: &Auth,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         let values = json!({
             "ordersource": "API",
             "uid": auth.username,
@@ -39,17 +42,7 @@ pub mod orders {
 
         let url = format!("{}{}", HOST, ORDERBOOK);
         let payload = format!("jData={}&jKey={}", values.to_string(), auth.susertoken);
-        let client = reqwest::blocking::Client::new();
-        let res: String = client
-            .post(&url)
-            .body(payload)
-            .send()
-            .unwrap()
-            .text()
-            .unwrap();
-
-        let res_dict: serde_json::Value = serde_json::from_str(&res)?;
-
+        let res_dict = post_to_client(url, payload).await;
         if res_dict["stat"] != "Ok" {
             return Err(res_dict.to_string().into());
         }
@@ -57,7 +50,7 @@ pub mod orders {
         Ok(res_dict)
     }
 
-    pub fn cancel_order(
+    pub async fn cancel_order(
         auth: &Auth,
         orderno: String,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
@@ -69,16 +62,7 @@ pub mod orders {
 
         let url = format!("{}{}", HOST, CANCELORDER);
         let payload = format!("jData={}&jKey={}", values.to_string(), auth.susertoken);
-        let client = reqwest::blocking::Client::new();
-        let res: String = client
-            .post(&url)
-            .body(payload)
-            .send()
-            .unwrap()
-            .text()
-            .unwrap();
-
-        let res_dict: serde_json::Value = serde_json::from_str(&res).unwrap();
+        let res_dict = post_to_client(url, payload).await;
 
         if res_dict["stat"] != "Ok" {
             return Err(res_dict.to_string().into());
@@ -158,7 +142,7 @@ pub mod orders {
             self.trail_price = trail_price;
             self
         }
-        pub fn place(&self) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+        pub async fn place(&self) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
             // validate prd, exch, tsym, qty, prc, ret, amo, remarks non empty
             if self.product_type.is_empty()
                 || self.exchange.is_empty()
@@ -217,16 +201,8 @@ pub mod orders {
                 values.to_string(),
                 self.auth.borrow().susertoken
             );
-            let client = reqwest::blocking::Client::new();
-            let res: String = client
-                .post(&url)
-                .body(payload)
-                .send()
-                .unwrap()
-                .text()
-                .unwrap();
 
-            let res_dict: serde_json::Value = serde_json::from_str(&res).unwrap();
+            let res_dict = post_to_client(url, payload).await;
 
             if res_dict["stat"] != "Ok" {
                 return Err(res_dict.to_string().into());

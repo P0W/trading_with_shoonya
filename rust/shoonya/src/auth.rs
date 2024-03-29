@@ -113,13 +113,6 @@ pub mod auth {
             });
 
             let client = reqwest::Client::new();
-            // let res: String = client
-            //     .post(&url)
-            //     .body(format!("jData={}", values.to_string()))
-            //     .send()?
-            //     .await?.
-            //     text()?;
-            // await the response
             let res = client
                 .post(&url)
                 .body(format!("jData={}", values.to_string()))
