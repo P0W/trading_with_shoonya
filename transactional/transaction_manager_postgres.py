@@ -117,16 +117,18 @@ class TransactionManager(order_manager.OrderManager):
                 PRIMARY KEY (symbolcode, instance))"""
             )
 
-            ## create a table order_prices schema : (tradingsymbol, price, qty, remarks, instance)
+            ## create a table order_prices schema : (tradingsymbol, price, qty, remarks, instance),
+            ## make tradingsymbol, instance as primary key
             table_name = "order_prices"
             self.logger.info("Creating table order_prices")
             cursor.execute(
                 f"""CREATE TABLE IF NOT EXISTS {table_name}
-                (tradingsymbol TEXT PRIMARY KEY,
+                (tradingsymbol TEXT,
                 price REAL,
                 qty INTEGER,
                 remarks TEXT,
-                instance TEXT)"""
+                instance TEXT,
+                PRIMARY KEY (tradingsymbol, instance))"""
             )
             cursor.connection.commit()
 
@@ -201,15 +203,15 @@ class TransactionManager(order_manager.OrderManager):
             "instance": self.instance_id,
         }
         with self.getcursor() as cursor:
+            ## traddingsymbol and instance are primary keys
             cursor.execute(
                 """INSERT INTO order_prices
                 (tradingsymbol, price, qty, remarks, instance)
                 VALUES (%(tradingsymbol)s, %(price)s, %(qty)s, %(remarks)s, %(instance)s)
-                ON CONFLICT (tradingsymbol) DO UPDATE
+                ON CONFLICT (tradingsymbol, instance) DO UPDATE
                 SET price = %(price)s,
                 qty = %(qty)s,
-                remarks = %(remarks)s,
-                instance = %(instance)s
+                remarks = %(remarks)s
                 """,
                 upsert_data,
             )
