@@ -276,44 +276,6 @@ class ShoonyaTransaction:
         time.sleep(5)
 
     @delay_decorator(delay=15)
-    def modify_book_profit(self, book_profit_factor: float, qty: int):
-        """Modify book profit order"""
-        all_orders = self.transaction_manager.get_orders()
-        for order in all_orders:
-            norenordno = order["norenordno"]
-            tradingsymbol = order["tradingsymbol"]
-            ## filter order with remarks and OPEN status
-            if (
-                "_book_profit" not in order["remarks"]
-                or order["status"] != OrderStatus.OPEN
-            ):
-                continue
-            ltp = self.transaction_manager.get_ltp(tradingsymbol)
-            if not ltp:
-                self.logger.error("LTP not available for %s", tradingsymbol)
-                continue
-            rounded_ltp = round_to_point5(ltp * book_profit_factor)
-            response = self.api.modify_order(
-                orderno=norenordno,
-                exchange=get_exchange(tradingsymbol),
-                tradingsymbol=tradingsymbol,
-                newquantity=qty,
-                newprice_type="LMT",
-                newprice=rounded_ltp,
-            )
-            self.logger.info("Order modified: %s", response)
-            self.logger.debug(
-                "Order modified: %s | %s | %s | %s | %s | %s",
-                norenordno,
-                get_exchange(tradingsymbol),
-                tradingsymbol,
-                qty,
-                "LMT",
-                rounded_ltp,
-            )
-        return True
-
-    @delay_decorator(delay=15)
     def place_book_sl(
         self, order_data: Dict, parent_remarks: str, parent_status: OrderStatus
     ):
