@@ -31,11 +31,11 @@ def log_execution_time(message):
 
     def decorator(func):
         def wrapper(*args, **kwargs):
-            start_time = time.time()
+            start_time = time.perf_counter()
             result = func(*args, **kwargs)
-            end_time = time.time()
-            execution_time = end_time - start_time
-            logger.info("%s executed in %.2f seconds", message, execution_time)
+            end_time = time.perf_counter()
+            execution_time = (end_time - start_time) * 1000  # convert to milliseconds
+            logger.info("%s executed in %.2f milliseconds", message, execution_time)
             return result
 
         return wrapper
