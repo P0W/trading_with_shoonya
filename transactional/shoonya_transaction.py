@@ -214,9 +214,12 @@ class ShoonyaTransaction:
         return self.transaction_manager.test(status, interval)
 
     @delay_decorator(delay=60)
-    def display_order_queue(self):
+    def display_stats(self):
         """Display order queue"""
         self.logger.debug("Order queue: %s", self.order_queue)
+        self.logger.debug(
+            "Active Connections %d", self.transaction_manager.get_active_connections()
+        )
 
     @delay_decorator(delay=5)
     def _both_legs_rejected(self):
@@ -569,7 +572,7 @@ def main(args):
             shoonya_transaction.modify_sl(book_profit_factor=book_profit)
             ## Re-enqueue rejected order
             shoonya_transaction.re_enqueue_rejected_order()
-            shoonya_transaction.display_order_queue()
+            shoonya_transaction.display_stats()
 
 
 def quick_test():

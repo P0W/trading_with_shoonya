@@ -16,6 +16,7 @@ from const import OrderStatus
 from psycopg2.pool import PoolError
 from psycopg2.pool import ThreadedConnectionPool
 from utils import full_stack
+from utils import log_execution_time
 
 import order_manager  ## pylint: disable=import-error
 
@@ -30,6 +31,7 @@ class TransactionManager(order_manager.OrderManager):
     )
     MAX_CONNECTIONS = 10  ## maximum number of connections in the pool
 
+    @log_execution_time("Initiate TransactionManager")
     def __init__(self, api_object: Any, config: Dict):
         """
         Initialize the transaction manager
@@ -50,16 +52,16 @@ class TransactionManager(order_manager.OrderManager):
             conn_string,
         )
 
-        # conn = psycopg2.connect(conn_string)
-        # cursor = conn.cursor(cursor_factory=psycopg2.extras.NamedTupleCursor)
         ## get the current unix utc_timestamp using datetime
         self.start_time = self._get_utc_timestamp()
+        self.active_connections = 0
         self._create_tables()
 
     @contextmanager
     def getcursor(self):
         """Get a cursor from the connection pool"""
         con = self.conn_pool.getconn()
+        self.active_connections += 1
         try:
             yield con.cursor(cursor_factory=psycopg2.extras.NamedTupleCursor)
         except psycopg2.OperationalError as ex:
@@ -74,10 +76,15 @@ class TransactionManager(order_manager.OrderManager):
             sys.exit(-1)
         finally:
             self.conn_pool.putconn(con)
+            self.active_connections -= 1
+
+    def get_active_connections(self):
+        """Get the number of active connections in the pool"""
+        return self.active_connections
 
     def _get_utc_timestamp(self):
         """Get the current utc_timestamp"""
-        return datetime.datetime.utcnow().timestamp()
+        return datetime.datetime.now().timestamp()
 
     def _create_tables(self):
         """Create a table transaction in the database"""
@@ -246,6 +253,7 @@ class TransactionManager(order_manager.OrderManager):
             self.logger.error("Stack Trace : %s", full_stack())
             sys.exit(-1)
 
+    @log_execution_time("Subscribe")
     def subscribe_symbols(self, symbol: Dict):
         """
         Subscribe to symbols
@@ -279,6 +287,7 @@ class TransactionManager(order_manager.OrderManager):
             )
             cursor.connection.commit()
 
+    @log_execution_time("Unsubscribe")
     def unsubscribe_symbols(self, symbol: Dict):
         """
         Unsubscribe from symbols
@@ -321,6 +330,7 @@ class TransactionManager(order_manager.OrderManager):
                 return norenordno, OrderStatus(status)
         return None, None
 
+    @log_execution_time("PnL")
     def get_pnl(self):
         """
         Get PnL for all orders, use all three tables,

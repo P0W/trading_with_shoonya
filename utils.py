@@ -15,14 +15,32 @@ from functools import wraps
 import colorlog
 import pandas as pd
 import requests
+from tqdm import tqdm
+
 from const import EXCHANGE
 from const import INDICES_ROUNDING
 from const import INDICES_TOKEN
 from const import LOT_SIZE
 from const import SCRIP_SYMBOL_NAME
-from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
+
+
+def log_execution_time(message):
+    """Log the execution time of the function"""
+
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            start_time = time.time()
+            result = func(*args, **kwargs)
+            end_time = time.time()
+            execution_time = end_time - start_time
+            logger.info("%s executed in %.2f seconds", message, execution_time)
+            return result
+
+        return wrapper
+
+    return decorator
 
 
 def round_to_point5(x):
@@ -239,6 +257,7 @@ def get_closest_expiry(symbol_index):
 
 
 ## pylint: disable=too-many-locals
+@log_execution_time("get_staddle_strike")
 def get_staddle_strike(shoonya_api, symbol_index, qty=-1):
     """
     Get the nearest strike for the index

@@ -105,7 +105,7 @@ class OrderManager:
             socket_close_callback=lambda: self.logger.info("Websocket Closed"),
         )
         while self.opened is False:
-            self.logger.info("Waiting for websocket to open")
+            self.logger.warning("Waiting for websocket to open")
             time.sleep(0.5)
         self.running = True
 
