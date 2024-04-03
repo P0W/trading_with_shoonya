@@ -16,7 +16,7 @@ INDICES_TOKEN = {
     "GBPINR": "26",
     "JPYINR": "27",
     "BANKEX": "12",
-    "CRUDEOIL": "260604",
+    "CRUDEOIL": "426261",
 }
 
 INDICES_ROUNDING = {

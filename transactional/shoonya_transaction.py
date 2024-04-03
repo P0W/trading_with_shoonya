@@ -480,7 +480,9 @@ def main(args):
         ## keep checking for same premium, if not same, keep updating the strikes,
         ## after every 5 minutes
         diff = abs(float(strikes_data["ce_ltp"]) - float(strikes_data["pe_ltp"]))
-        while diff > 15:
+        min_ltp = min(float(strikes_data["ce_ltp"]), float(strikes_data["pe_ltp"]))
+        per_change = (diff / min_ltp) * 100
+        while per_change > 25:  ## if difference is more than 25%, re-check the strikes
             ## Display ltp values too
             logger.info(
                 "Current LTP: CE: %.2f | PE: %.2f",
@@ -488,7 +490,9 @@ def main(args):
                 float(strikes_data["pe_ltp"]),
             )
             logger.info(
-                "Difference in premium: %.2f, re-checking strikes after 5 minutes", diff
+                "Difference in premium: %.2f (change: %.2f), re-checking strikes after 5 minutes",
+                diff,
+                per_change,
             )
             ## use a visual indicator to show that the script is running
             wait_with_progress(300)
