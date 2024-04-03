@@ -406,6 +406,9 @@ class ShoonyaTransaction:
             ## parent order not placed yet
             if not remarks.endswith("_straddle") or status != OrderStatus.COMPLETE:
                 continue
+            book_profit_remark = f"{remarks}_book_profit"
+            if book_profit_remark not in self.order_queue:
+                continue  ## Already placed
             ## get the ltp
             tradingsymbol = order["tradingsymbol"]
             ltp = self.transaction_manager.get_ltp(tradingsymbol)
