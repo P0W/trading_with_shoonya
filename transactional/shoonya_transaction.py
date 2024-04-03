@@ -317,7 +317,7 @@ class ShoonyaTransaction:
             )
 
     @delay_decorator(delay=15)
-    def modify_sl(self, book_profit_factor: float):
+    def modify_book_profit_sl(self, book_profit_factor: float):
         """Modify stop loss order"""
         ## pylint: disable=too-many-locals
         all_orders = self.transaction_manager.get_orders()
@@ -384,6 +384,62 @@ class ShoonyaTransaction:
                 self.order_queue.add(remarks)
                 self.logger.info("Order re-enqueued: %s", remarks)
         self.logger.debug("Rejected book_profit order re-enqueued: %s", has_rejected)
+
+    @delay_decorator(delay=15)
+    def place_book_profit_sl_v2(self, book_profit_price: float, qty: int):
+        """Place book sl v2 for each leg"""
+        ## fast lookup from order queue
+        ## if both of ce_straddle_book_profit and pe_straddle_book_profit is executed return
+        ce_remarks = get_remarks(
+            instance_id=self.instance_id, msg="ce_straddle_book_profit"
+        )
+        pe_remarks = get_remarks(
+            instance_id=self.instance_id, msg="pe_straddle_book_profit"
+        )
+        if ce_remarks not in self.order_queue and pe_remarks not in self.order_queue:
+            return
+        ## get all orders
+        all_orders = self.transaction_manager.get_orders()
+        for order in all_orders:
+            status = order["status"]
+            remarks = order["status"]
+            ## parent order not placed yet
+            if not remarks.endsWith("_straddle") or status != OrderStatus.COMPLETE:
+                continue
+            ## get the ltp
+            tradingsymbol = order["tradingsymbol"]
+            ltp = self.transaction_manager.get_ltp(tradingsymbol)
+            if not ltp:
+                self.logger.error("LTP not available for %s", tradingsymbol)
+                continue
+            diff_percent = (1 - (ltp / book_profit_price)) * 100
+            if diff_percent > 5:  ## 5% difference, then modify the order
+                ## place order
+                order_data = {
+                    "buy_or_sell": "B",
+                    "product_type": "M",
+                    "exchange": get_exchange(tradingsymbol),
+                    "tradingsymbol": tradingsymbol,
+                    "quantity": qty,
+                    "discloseqty": 0,
+                    "price_type": "SL-LMT",
+                    "price": book_profit_price,
+                    "trigger_price": (book_profit_price - 0.5),
+                    "retention": "DAY",
+                    "remarks": f"{remarks}_book_profit",
+                }
+                response = self.api.place_order(**order_data)
+                self.order_queue.remove(f"{remarks}_book_profit")
+                self.logger.info("Order placed: %s", response)
+                self.logger.debug("Order placed: %s", json.dumps(order_data, indent=2))
+            else:
+                self.logger.debug(
+                    "%s | LTP: %.2f | Price: %.2f | Diff Percent: %.2f, not placing order",
+                    tradingsymbol,
+                    ltp,
+                    book_profit_price,
+                    diff_percent,
+                )
 
 
 ## pylint: disable=too-many-locals, too-many-statements
@@ -530,23 +586,23 @@ def main(args):
                 parent_remarks=f"{subscribe_msg}_stop_loss",
                 parent_status=OrderStatus.COMPLETE,
             )
-            shoonya_transaction.place_book_sl(  ## Place book stop loss order,
-                order_data={
-                    "buy_or_sell": "B",
-                    "product_type": "M",
-                    "exchange": get_exchange(symbol),
-                    "tradingsymbol": symbol,
-                    "quantity": qty,
-                    "discloseqty": 0,
-                    "price_type": "SL-LMT",
-                    "price": book_profit_ltp,
-                    "trigger_price": (book_profit_ltp - 0.5),
-                    "retention": "DAY",
-                    "remarks": f"{subscribe_msg}_book_profit",
-                },
-                parent_remarks=f"{subscribe_msg}",
-                parent_status=OrderStatus.COMPLETE,
-            )
+            # shoonya_transaction.place_book_sl(  ## Place book stop loss order,
+            #     order_data={
+            #         "buy_or_sell": "B",
+            #         "product_type": "M",
+            #         "exchange": get_exchange(symbol),
+            #         "tradingsymbol": symbol,
+            #         "quantity": qty,
+            #         "discloseqty": 0,
+            #         "price_type": "SL-LMT",
+            #         "price": book_profit_ltp,
+            #         "trigger_price": (book_profit_ltp - 0.5),
+            #         "retention": "DAY",
+            #         "remarks": f"{subscribe_msg}_book_profit",
+            #     },
+            #     parent_remarks=f"{subscribe_msg}",
+            #     parent_status=OrderStatus.COMPLETE,
+            # )
             shoonya_transaction.cancel_on_book_profit(  ## Cancel stop loss order,
                 ## if book profit is COMPLETE
                 remarks=f"{subscribe_msg}_cancel",
@@ -569,7 +625,11 @@ def main(args):
                 remarks=f"{subscribe_msg}_unsubscribe",
                 parent_remarks=subscribe_msg,
             )
-            shoonya_transaction.modify_sl(book_profit_factor=book_profit)
+            shoonya_transaction.place_book_profit_sl_v2(  ## Place the book profit order
+                book_profit_price=book_profit_ltp, qty=qty
+            )
+            ## Modify book profit order
+            shoonya_transaction.modify_book_profit_sl(book_profit_factor=book_profit)
             ## Re-enqueue rejected order
             shoonya_transaction.re_enqueue_rejected_order()
             shoonya_transaction.display_stats()
