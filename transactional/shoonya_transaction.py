@@ -402,9 +402,9 @@ class ShoonyaTransaction:
         all_orders = self.transaction_manager.get_orders()
         for order in all_orders:
             status = order["status"]
-            remarks = order["status"]
+            remarks = order["remarks"]
             ## parent order not placed yet
-            if not remarks.endsWith("_straddle") or status != OrderStatus.COMPLETE:
+            if not remarks.endswith("_straddle") or status != OrderStatus.COMPLETE:
                 continue
             ## get the ltp
             tradingsymbol = order["tradingsymbol"]
