@@ -53,6 +53,7 @@ impl WebSocketCallback for WebSocketCallbackHandler {
         let _ = self.redis_transaction.on_tick(tick_data).await;
         let (pnl, pnl_str) = self.redis_transaction.get_pnl().await;
         (self.pnl_feed_callback)(pnl, pnl_str);
+        debug!("Done with subscribe_callback");
     }
 
     async fn order_callback(&mut self, order_data: &serde_json::Value) {
@@ -130,10 +131,16 @@ impl OrderManager {
         let _thread = self.api.start_websocket(&binding).await;
         self.opened = true;
         self.running = true;
+        debug!("Websocket Started {:?}", self.running);
     }
 
     pub async fn stop(&mut self) {
         let _ = self.api.close_websocket().await;
+        debug!("Websocket Closed");
         self.running = false;
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.running
     }
 }

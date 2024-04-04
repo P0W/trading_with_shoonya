@@ -224,7 +224,7 @@ pub mod transaction {
                 let order: HashMap<String, String> =
                     redis_conn.send(resp_array!["HGETALL", key]).await.unwrap();
                 debug!("order: {:?}", order);
-                let avgprice: f64 = order.get("avgprice").unwrap().parse().unwrap();
+                /*let avgprice: f64 = order.get("avgprice").unwrap().parse().unwrap();
                 let qty: i64 = order.get("qty").unwrap().parse().unwrap();
                 let ltp: f64 = order.get("ltp").unwrap().parse().unwrap();
                 let status: &str = order.get("status").unwrap();
@@ -235,9 +235,10 @@ pub mod transaction {
                     // pnl string as buysell tradingsymbol x qty : pnl
                     let pnl_str = format!("{} {} x {} : {:.2}", buysell, tradingsymbol, qty, pnl);
                     pnl_vec.push(pnl_str);
-                }
+                }*/
             }
             let pnl_str = pnl_vec.join("");
+            debug!("pnl: {:?}", pnl);
             (pnl, pnl_str)
         }
     }

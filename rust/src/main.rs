@@ -325,6 +325,19 @@ mod tests {
         let _ = order_manager
             .subscribe(vec!["MCX|426261".to_string()])
             .await;
+
+        // wait until the order_manager is running
+        let mut count = 0;
+        while order_manager.is_running() {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            debug!("Waiting for order manager to stop");
+            count += 1;
+            if count == 10 {
+                debug!("unsubscribing...");
+                let _ = order_manager.unsubscribe(vec!["MCX|426261".to_string()]).await;
+            }
+        }
+
         let _ = order_manager.stop().await;
     }
 }
