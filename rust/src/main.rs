@@ -334,7 +334,9 @@ mod tests {
             count += 1;
             if count == 10 {
                 debug!("unsubscribing...");
-                let _ = order_manager.unsubscribe(vec!["MCX|426261".to_string()]).await;
+                let _ = order_manager
+                    .unsubscribe(vec!["MCX|426261".to_string()])
+                    .await;
             }
         }
 

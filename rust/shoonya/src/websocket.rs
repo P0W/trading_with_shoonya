@@ -2,7 +2,7 @@ pub mod websocket {
     use crate::auth::auth::Auth;
     use crate::urls::urls::WEBSOCKET_ENDPOINT;
     use async_trait::async_trait;
-    use futures_util::{SinkExt, TryStreamExt};
+    use futures_util::{stream::SplitSink, SinkExt, StreamExt};
     use log::*;
     use serde_json::json;
     use std::borrow::BorrowMut;
@@ -27,81 +27,46 @@ pub mod websocket {
         async fn on_connect(&mut self, res: &serde_json::Value);
     }
 
+    type WebSocketStreamMsg = tokio_tungstenite::tungstenite::Message;
+    type WebSocketStreamType = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
     pub struct WebSocketApp {
-        websocket: Option<Arc<Mutex<WebSocketStream<MaybeTlsStream<TcpStream>>>>>,
         ws_thread: Option<tokio::task::JoinHandle<()>>,
         callback: Option<Arc<Mutex<dyn WebSocketCallback + Send>>>,
+        tx: Option<SplitSink<WebSocketStreamType, WebSocketStreamMsg>>,
     }
 
     impl WebSocketApp {
         pub fn new<T: 'static + WebSocketCallback + Send>(callback: T) -> Self {
             WebSocketApp {
-                websocket: None,
                 ws_thread: None,
                 callback: Some(Arc::new(Mutex::new(callback))),
+                tx: None,
             }
         }
 
         async fn send_data(&mut self, data: serde_json::Value) -> bool {
-            let mut delay = Duration::from_millis(10);
-            let ws_clone = self.websocket.borrow_mut();
-            match ws_clone {
-                Some(ws) => {
-                    loop {
-                        match ws.try_lock() {
-                            Ok(mut ws) => {
-                                let send_result = ws
-                                    .send(tokio_tungstenite::tungstenite::Message::Text(
-                                        data.to_string(),
-                                    ))
-                                    .await;
-                                match send_result {
-                                    Ok(_) => {
-                                        return {
-                                            info!("Data sent successfully");
-                                            true
-                                        }
-                                    }
-                                    Err(_) => {
-                                        info!("Failed to send data");
-                                    }
-                                }
-                                return true;
-                            }
-                            Err(_) => {
-                                info!("Lock not acquired, while sending data {:?}", delay);
-                                sleep(delay).await;
-                                delay *= 2; // Double the delay for the next iteration
-                            }
-                        }
-                    }
+            let tx = self.tx.as_mut().unwrap();
+            match tx
+                .send(tokio_tungstenite::tungstenite::Message::Text(
+                    data.to_string(),
+                ))
+                .await
+            {
+                Ok(_) => {
+                    debug!("Data sent successfully");
+                    true
                 }
-                None => {
-                    info!("Websocket not connected, retrying in {:?}", delay);
-                    sleep(delay).await;
-                    delay *= 2; // Double the delay for the next iteration
+                Err(e) => {
+                    error!("Failed to send data: {}", e);
                     false
                 }
             }
         }
 
         pub async fn close_websocket(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-            if let Some(ws) = self.websocket.as_mut() {
-                let ws_lock = ws.try_lock();
-                match ws_lock {
-                    Ok(mut ws) => {
-                        ws.close(None).await?;
-                    }
-                    Err(e) => {
-                        error!("Failed to acquire lock on websocket: {}", e);
-                        return Err(Box::new(e));
-                    }
-                }
-            }
-            if let Some(ws_thread) = self.ws_thread.as_mut() {
-                ws_thread.await?;
-            }
-            info!("Websocket closed successfully");
+            let tx = self.tx.as_mut().unwrap();
+            tx.close().await?;
             Ok(())
         }
 
@@ -110,8 +75,10 @@ pub mod websocket {
             auth: &Auth,
         ) -> Result<(), Box<dyn std::error::Error>> {
             let (ws_original, _) = connect_async(WEBSOCKET_ENDPOINT).await?;
+
+            let (tx, mut rx) = ws_original.split();
+            self.tx = Some(tx);
             debug!("Connected to websocket");
-            self.websocket = Some(Arc::new(Mutex::new(ws_original)));
 
             let values = json!(
                 {
@@ -152,29 +119,19 @@ pub mod websocket {
             }
 
             let callback_clone = self.callback.clone().unwrap();
-            let websocket_clone = self.websocket.clone().unwrap();
             let ws_thread = tokio::spawn(async move {
                 loop {
-                    //debug!("Waiting for message");
-                    match websocket_clone.try_lock() {
-                        Ok(mut ws_locked) => {
-                            match ws_locked.try_next().await {
-                                Ok(Some(message)) => {
-                                    debug!("Message received: {:?}", message);
-                                    handle_message(message, &callback_clone, ws_locked).await;
-                                }
-                                Ok(None) => {
-                                    debug!("No more messages");
-                                }
-                                Err(_) => {
-                                    debug!("Error while receiving message");
-                                }
-                            }
-
-                            debug!("Message handled");
+                    match rx.next().await {
+                        Some(Ok(message)) => {
+                            handle_message(message, &callback_clone).await;
                         }
-                        Err(_) => {
-                            //  debug!("Websocket cannot be locked!");
+                        Some(Err(e)) => {
+                            error!("Error: {:?}", e);
+                            break;
+                        }
+                        None => {
+                            error!("None");
+                            break;
                         }
                     }
                 }
@@ -188,13 +145,11 @@ pub mod websocket {
     async fn handle_message(
         message: tokio_tungstenite::tungstenite::Message,
         callback_clone: &Arc<Mutex<dyn WebSocketCallback + Send>>,
-        mut ws_locked: tokio::sync::MutexGuard<'_, WebSocketStream<MaybeTlsStream<TcpStream>>>,
     ) {
         debug!("Message: {:?}", message);
         match message {
             tokio_tungstenite::tungstenite::Message::Text(text) => {
                 let json: Result<serde_json::Value, _> = serde_json::from_str(text.as_str());
-                //let mut callback = callback_clone.try_lock().unwrap();
                 match json {
                     Ok(res) => {
                         // Use the data
@@ -205,7 +160,7 @@ pub mod websocket {
                         {
                             debug!("subscribe_callback {:?}", res);
                             //let _ = callback.subscribe_callback(&res).await;
-                            //debug!("Sending ack");
+                            debug!("Sending ack");
                             loop {
                                 match callback_clone.try_lock() {
                                     Ok(mut callback) => {
@@ -273,11 +228,11 @@ pub mod websocket {
                 }
             }
             tokio_tungstenite::tungstenite::Message::Ping(_) => {
-                let pong_msg = "{\"t\":\"h\"}".to_owned();
-                ws_locked
-                    .send(tokio_tungstenite::tungstenite::Message::Text(pong_msg))
-                    .await
-                    .unwrap();
+                //let pong_msg = "{\"t\":\"h\"}".to_owned();
+                // ws_locked
+                //     .send(tokio_tungstenite::tungstenite::Message::Text(pong_msg))
+                //     .await
+                //     .unwrap();
             }
             tokio_tungstenite::tungstenite::Message::Binary(bin) => {
                 debug!("Binary message: {:?}", bin);
