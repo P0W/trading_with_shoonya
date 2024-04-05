@@ -1,6 +1,7 @@
 """
 Transaction manager
 """
+
 import datetime
 import json
 import logging
@@ -331,7 +332,7 @@ class TransactionManager(order_manager.OrderManager):
         return None, None
 
     @log_execution_time("PnL")
-    def get_pnl(self):
+    def get_pnl(self) -> Tuple[float, Dict]:
         """
         Get PnL for all orders, use all three tables,
             liveltp has live prices and symbolcode,
@@ -358,7 +359,7 @@ class TransactionManager(order_manager.OrderManager):
             self.logger.error(full_stack())
             return -999.999
         total_pnl = 0
-        msg = []
+        msg = {}
         for row in rows:
             avgprice = float(row.avgprice)
             qty = int(row.qty)
@@ -372,14 +373,17 @@ class TransactionManager(order_manager.OrderManager):
             else:
                 pnl = (avgprice - ltp) * qty
             key = f"{tradingsymbol} {buysell} {qty} @ {avgprice:.2f}"
-            msg.append({key: f"{ltp:.2f} : {pnl:.2f}"})
+            # msg.append({key: f"{ltp:.2f} : {pnl:.2f}"})
+            msg[key] = f"{ltp:.2f} : {pnl:.2f}"
             total_pnl += pnl
         if msg:
             ## sort msg by key
-            msg = sorted(msg, key=lambda k: list(k.keys())[0])
-            msg.append({"Total": f"{total_pnl:.2f}"})
-            self.logger.info(json.dumps(msg, indent=1))
-        return total_pnl
+            sorted_msg = dict(sorted(msg.items()))
+            # msg = sorted(msg, key=lambda k: list(k.keys())[0])
+            # msg.append({"Total": f"{total_pnl:.2f}"})
+            sorted_msg["Total"] = f"{total_pnl:.2f}"
+            # self.logger.info(json.dumps(msg, indent=1))
+        return total_pnl, sorted_msg
 
     def get_orders(self) -> List[Dict]:
         """Get all orders for this instance"""

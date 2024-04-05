@@ -2,6 +2,7 @@
 This module is used to place orders for straddle strategy using Shoonya API.
 Uses relational database to store orders and their status.
 """
+
 import json
 import logging
 import sys
@@ -179,14 +180,16 @@ class ShoonyaTransaction:
     @delay_decorator(delay=10)
     def cancel_on_profit(self, target_profit: float):
         """Cancel order using Shoonya API"""
-        total_pnl = self.transaction_manager.get_pnl()
+        total_pnl, display_msg = self.transaction_manager.get_pnl()
         if total_pnl > target_profit:
             self.logger.info(
-                "Target reached Current Pnl: %.2f | Target: %.2f, cancelling all pending orders",
+                "Target reached Current Pnl: %.2f | Target: %.2f | Cancelling all pending orders",
                 total_pnl,
                 target_profit,
             )
             self._square_off()
+        display_msg["Target"] = target_profit
+        self.logger.info(json.dumps(display_msg, indent=2))
 
     @delay_decorator(delay=10)
     def exit_on_book_profit(self):
