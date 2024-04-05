@@ -2,23 +2,20 @@
 
 use async_trait::async_trait;
 use log::*;
-use serde_json;
 use shoonya::transaction::transaction::TransactionManager;
 use shoonya::{
     auth::auth::Auth,
     transaction::transaction::Transaction,
     websocket::websocket::{WebSocketApi, WebSocketApp, WebSocketCallback},
 };
-use std::cell::RefCell;
 use std::collections::HashSet;
-use std::rc::Rc;
 
 pub struct OrderManager {
     api: WebSocketApp,
     opened: bool,
     subscribed_symbols: HashSet<String>,
     running: bool,
-    auth: Rc<RefCell<Auth>>,
+    auth: Auth,
 }
 
 pub struct WebSocketCallbackHandler {
@@ -67,7 +64,7 @@ impl WebSocketCallback for WebSocketCallbackHandler {
 }
 
 impl OrderManager {
-    pub fn new(api_object: WebSocketApp, auth: Rc<RefCell<Auth>>) -> OrderManager {
+    pub fn new(api_object: WebSocketApp, auth: Auth) -> OrderManager {
         OrderManager {
             api: api_object,
             opened: false,
@@ -77,25 +74,10 @@ impl OrderManager {
         }
     }
 
-    fn _open_callback(&mut self) {
-        if self.opened {
-            info!("Websocket Re-Opened");
-            if !self.subscribed_symbols.is_empty() {
-                info!("Resubscribing to {:?}", self.subscribed_symbols);
-                // Convert HashSet to Vec<String>
-                let symbols: Vec<String> = self.subscribed_symbols.iter().cloned().collect();
-                let _ = self.api.subscribe(&symbols);
-            }
-        } else {
-            info!("Websocket Opened");
-        }
-        self.opened = true;
-    }
-
     #[allow(dead_code)]
     pub async fn subscribe(&mut self, symbols: Vec<String>) {
         // Convert HashSet to Vec<String>
-        let symbols: Vec<String> = symbols.iter().cloned().collect();
+        let symbols: Vec<String> = symbols.to_vec();
         let _ = self.api.subscribe(&symbols).await;
         self.subscribed_symbols.extend(symbols);
         info!("Current subscribed_symbols: {:?}", self.subscribed_symbols);
@@ -127,11 +109,12 @@ impl OrderManager {
     }
 
     pub async fn start(&mut self) {
-        let binding = self.auth.as_ref().borrow_mut();
-        let _thread = self.api.start_websocket(&binding).await;
+        let auth = self.auth.clone(); // Clone the auth object
+        let thread = self.api.start_websocket(auth);
         self.opened = true;
         self.running = true;
         debug!("Websocket Started {:?}", self.running);
+        let _ = thread.await;
     }
 
     pub async fn stop(&mut self) {

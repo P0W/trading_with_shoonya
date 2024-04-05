@@ -1,9 +1,5 @@
 mod logger;
 mod order_manager;
-
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use common::utils::utils::*;
 use scrip_master::scrips::download_scrip;
 use shoonya::auth::auth::Auth;
@@ -47,7 +43,7 @@ async fn get_straddle_strikes(auth: &Auth, index: &str, closest_price: f64) -> s
         }
     }
     let _ = download_scrip(&exchange).await;
-    let (scrip_data, expiry_date) = read_txt_file_as_csv(&file_name, &config_file, &index);
+    let (scrip_data, expiry_date) = read_txt_file_as_csv(&file_name, &config_file, index);
     info!("Expiry date: {}", expiry_date);
 
     let index_quote = auth.get_quote(&index_exchange, index_token).await;
@@ -55,9 +51,9 @@ async fn get_straddle_strikes(auth: &Auth, index: &str, closest_price: f64) -> s
     let rounded_strike = (index_quote / rounding).round() * rounding;
 
     let (ce_code, ce_symbol) =
-        get_strike_info(&scrip_data, &index, &expiry_date, rounded_strike, "CE");
+        get_strike_info(&scrip_data, index, &expiry_date, rounded_strike, "CE");
     let (pe_code, pe_symbol) =
-        get_strike_info(&scrip_data, &index, &expiry_date, rounded_strike, "PE");
+        get_strike_info(&scrip_data, index, &expiry_date, rounded_strike, "PE");
 
     let ce_quote = auth.get_quote(&exchange, &ce_code).await;
     let pe_quote = auth.get_quote(&exchange, &pe_code).await;
@@ -76,9 +72,9 @@ async fn get_straddle_strikes(auth: &Auth, index: &str, closest_price: f64) -> s
     }
 
     let (ce_code_sl, ce_symbol_sl) =
-        get_strike_info(&scrip_data, &index, &expiry_date, otm_strike_ce, "CE");
+        get_strike_info(&scrip_data, index, &expiry_date, otm_strike_ce, "CE");
     let (pe_code_sl, pe_symbol_sl) =
-        get_strike_info(&scrip_data, &index, &expiry_date, otm_strike_pe, "PE");
+        get_strike_info(&scrip_data, index, &expiry_date, otm_strike_pe, "PE");
 
     let ce_quote_sl = auth.get_quote(&exchange, &ce_code_sl).await;
     let pe_quote_sl = auth.get_quote(&exchange, &pe_code_sl).await;
@@ -99,7 +95,7 @@ async fn get_straddle_strikes(auth: &Auth, index: &str, closest_price: f64) -> s
             for item in data.iter() {
                 let token = item["token"].as_str().unwrap();
                 let tsym = item["tsym"].as_str().unwrap();
-                let ltp = auth.get_quote(&exchange, &tsym).await;
+                let ltp = auth.get_quote(&exchange, tsym).await;
                 let opttype = item["optt"].as_str().unwrap();
                 strikes.push((ltp, tsym, opttype, token));
             }
@@ -262,9 +258,8 @@ async fn main() {
     let callback = WebSocketCallbackHandler::new(pnl_feed).await.unwrap();
 
     let websocket = WebSocketApp::new(callback);
-    let auth_ptr = Rc::new(RefCell::new(auth));
 
-    let mut order_manager = order_manager::OrderManager::new(websocket, auth_ptr.clone());
+    let mut order_manager = order_manager::OrderManager::new(websocket, auth.clone());
 
     let _ = order_manager.start().await;
 
@@ -279,11 +274,12 @@ async fn main() {
         let _ = order_manager.subscribe(vec![subscribe_code]).await;
         // place order for the symbol
         let qty = args.qty;
-        let _ = OrderBuilder::new(auth_ptr.clone())
+        let _ = OrderBuilder::new(auth.clone())
             .exchange(exchange.to_owned())
             .tradingsymbol(trading_symbol.to_string())
             .quantity(qty)
-            .place();
+            .place()
+            .await;
     }
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -317,13 +313,11 @@ mod tests {
             info!("PnL: {} {}", pnl, pnl_str);
         };
         let callback = WebSocketCallbackHandler::new(pnl_feed).await.unwrap();
-        let mut order_manager = order_manager::OrderManager::new(
-            WebSocketApp::new(callback),
-            Rc::new(RefCell::new(auth)),
-        );
+        let mut order_manager =
+            order_manager::OrderManager::new(WebSocketApp::new(callback), auth.clone());
         let _ = order_manager.start().await;
         let _ = order_manager
-            .subscribe(vec!["MCX|426261".to_string()])
+            .subscribe(vec!["NSE|26000".to_string()]) // NIFTY
             .await;
 
         // wait until the order_manager is running
@@ -335,7 +329,13 @@ mod tests {
             if count == 10 {
                 debug!("unsubscribing...");
                 let _ = order_manager
-                    .unsubscribe(vec!["MCX|426261".to_string()])
+                    .unsubscribe(vec!["NSE|26000".to_string()])
+                    .await;
+            }
+            if count == 15 {
+                // Subscribe to the symbols again, USDINR and BANKNIFTY
+                let _ = order_manager
+                    .subscribe(vec!["CDS|1".to_string(), "NSE|26009".to_string()])
                     .await;
             }
         }

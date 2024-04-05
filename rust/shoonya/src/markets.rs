@@ -9,7 +9,7 @@ pub mod markets {
     use serde_json::json;
 
     fn _get_payload(susertoken: &str, values: &serde_json::Value) -> String {
-        let payload = format!("jData={}&jKey={}", values.to_string(), susertoken);
+        let payload = format!("jData={}&jKey={}", values, susertoken);
         payload
     }
 

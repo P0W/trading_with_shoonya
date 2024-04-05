@@ -6,7 +6,7 @@ pub mod auth {
     use sha2::{Digest, Sha256};
     use totp_rs::{Rfc6238, Secret, TOTP};
 
-    #[derive(Debug, Default)]
+    #[derive(Debug, Default, Clone)]
     pub struct Auth {
         pub username: String,
         pub accountid: String,
@@ -26,7 +26,7 @@ pub mod auth {
             let file = std::fs::File::open(file_name).unwrap();
             let creds: serde_json::Value = serde_yaml::from_reader(file).unwrap();
             match super_token {
-                Ok(token) if force_login == false => {
+                Ok(token) if !force_login => {
                     debug!("Token found in cache");
                     let userid = creds["user"].as_str().unwrap();
                     let password = creds["pwd"].as_str().unwrap();
@@ -68,7 +68,7 @@ pub mod auth {
             let totp = TOTP::from_rfc6238(rfc).unwrap();
             let two_fa = totp.generate_current().unwrap();
 
-            let result = self
+            self
                 ._login(
                     creds["user"].as_str().unwrap(),
                     creds["pwd"].as_str().unwrap(),
@@ -77,9 +77,7 @@ pub mod auth {
                     creds["apikey"].as_str().unwrap(),
                     creds["imei"].as_str().unwrap(),
                 )
-                .await;
-
-            result
+                .await
         }
 
         async fn _login(
@@ -115,7 +113,7 @@ pub mod auth {
             let client = reqwest::Client::new();
             let res = client
                 .post(&url)
-                .body(format!("jData={}", values.to_string()))
+                .body(format!("jData={}", values))
                 .send()
                 .await
                 .unwrap()

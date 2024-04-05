@@ -1,9 +1,6 @@
 #[allow(dead_code)]
 
 pub mod orders {
-
-    use std::{cell::RefCell, rc::Rc};
-
     use crate::{
         auth::auth::Auth,
         urls::urls::{CANCELORDER, HOST, ORDERBOOK, PLACEORDER},
@@ -13,7 +10,7 @@ pub mod orders {
 
     #[derive(Debug, Default)]
     pub struct OrderBuilder {
-        pub auth: Rc<RefCell<Auth>>,
+        pub auth: Auth,
         pub orderno: String,
         pub tradingsymbol: String,
         pub exchange: String,
@@ -41,7 +38,7 @@ pub mod orders {
         });
 
         let url = format!("{}{}", HOST, ORDERBOOK);
-        let payload = format!("jData={}&jKey={}", values.to_string(), auth.susertoken);
+        let payload = format!("jData={}&jKey={}", values, auth.susertoken);
         let res_dict = post_to_client(url, payload).await;
         if res_dict["stat"] != "Ok" {
             return Err(res_dict.to_string().into());
@@ -61,18 +58,18 @@ pub mod orders {
         });
 
         let url = format!("{}{}", HOST, CANCELORDER);
-        let payload = format!("jData={}&jKey={}", values.to_string(), auth.susertoken);
+        let payload = format!("jData={}&jKey={}", values, auth.susertoken);
         let res_dict = post_to_client(url, payload).await;
 
         if res_dict["stat"] != "Ok" {
             return Err(res_dict.to_string().into());
         }
 
-        return Ok(res_dict);
+        Ok(res_dict)
     }
 
     impl OrderBuilder {
-        pub fn new(auth: Rc<RefCell<Auth>>) -> OrderBuilder {
+        pub fn new(auth: Auth) -> OrderBuilder {
             OrderBuilder {
                 auth,
                 retention: "DAY".to_owned(),
@@ -160,8 +157,8 @@ pub mod orders {
 
             let mut values = json!({
                 "ordersource": "API",
-                "uid": self.auth.borrow().username,
-                "actid": self.auth.borrow().username,
+                "uid": self.auth.username,
+                "actid": self.auth.username,
                 "trantype": self.buy_or_sell,
                 "prd": self.product_type,
                 "exch": self.exchange,
@@ -196,11 +193,7 @@ pub mod orders {
             }
 
             let url = format!("{}{}", HOST, PLACEORDER);
-            let payload = format!(
-                "jData={}&jKey={}",
-                values.to_string(),
-                self.auth.borrow().susertoken
-            );
+            let payload = format!("jData={}&jKey={}", values, self.auth.susertoken);
 
             let res_dict = post_to_client(url, payload).await;
 
@@ -208,7 +201,7 @@ pub mod orders {
                 return Err(res_dict.to_string().into());
             }
 
-            return Ok(res_dict);
+            Ok(res_dict)
         }
     }
 }

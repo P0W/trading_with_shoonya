@@ -5,7 +5,6 @@ pub mod websocket {
     use futures_util::{stream::SplitSink, SinkExt, StreamExt};
     use log::*;
     use serde_json::json;
-    use std::borrow::BorrowMut;
     use std::sync::Arc;
     use tokio::net::TcpStream;
     use tokio::sync::Mutex;
@@ -72,7 +71,7 @@ pub mod websocket {
 
         pub async fn start_websocket(
             &mut self,
-            auth: &Auth,
+            auth: Auth,
         ) -> Result<(), Box<dyn std::error::Error>> {
             let (ws_original, _) = connect_async(WEBSOCKET_ENDPOINT).await?;
 
@@ -228,6 +227,7 @@ pub mod websocket {
                 }
             }
             tokio_tungstenite::tungstenite::Message::Ping(_) => {
+                warn!("Got a ping");
                 //let pong_msg = "{\"t\":\"h\"}".to_owned();
                 // ws_locked
                 //     .send(tokio_tungstenite::tungstenite::Message::Text(pong_msg))

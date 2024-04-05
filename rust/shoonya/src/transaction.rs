@@ -43,9 +43,7 @@ pub mod transaction {
 
             let args = args.join("_");
             let cache_key = format!("{}_{}", self.instance, args);
-            let cache_key = cache_key.replace(" ", "_");
-
-            cache_key
+            cache_key.replace(' ', "_")
         }
 
         fn validate_self(&self, remark: String) -> bool {
@@ -167,7 +165,7 @@ pub mod transaction {
             assert!(success, "Failed to set symbolcode");
 
             // store a mapping of symbolcode to tradingsymbol
-            let cache_key = self.get_cache_key(&[&symbolcode.to_string(), "symb_tbl"]);
+            let cache_key = self.get_cache_key(&[&symbolcode, "symb_tbl"]);
             let _response: bool = self
                 .set_value(resp_array!["SET", cache_key, tradingsymbol])
                 .await;
