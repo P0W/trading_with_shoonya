@@ -361,29 +361,30 @@ class TransactionManager(order_manager.OrderManager):
         total_pnl = 0
         msg = {}
         for row in rows:
-            avgprice = float(row.avgprice)
+            avgprice = round(float(row.avgprice), 2)
             qty = int(row.qty)
             buysell = row.buysell
             tradingsymbol = row.tradingsymbol
-            ltp = float(row.ltp)
+            ltp = round(float(row.ltp), 2)
             if avgprice == -1 or qty == -1:
                 continue
             if buysell == "B":
                 pnl = (ltp - avgprice) * qty
             else:
                 pnl = (avgprice - ltp) * qty
-            key = f"{tradingsymbol} {buysell} {qty} @ {avgprice:.2f}"
-            # msg.append({key: f"{ltp:.2f} : {pnl:.2f}"})
-            msg[key] = f"{ltp:.2f} : {pnl:.2f}"
             total_pnl += pnl
+            msg[tradingsymbol] = {
+                "buysell": buysell,
+                "qty": int(qty),
+                "avgprice": avgprice,
+                "ltp": ltp,
+                "pnl": round(pnl, 2),
+            }
         if msg:
             ## sort msg by key
-            sorted_msg = dict(sorted(msg.items()))
-            # msg = sorted(msg, key=lambda k: list(k.keys())[0])
-            # msg.append({"Total": f"{total_pnl:.2f}"})
-            sorted_msg["Total"] = f"{total_pnl:.2f}"
-            # self.logger.info(json.dumps(msg, indent=1))
-        return total_pnl, sorted_msg
+            msg = dict(sorted(msg.items()))
+            msg["Total"] = round(total_pnl, 2)
+        return total_pnl, msg
 
     def get_orders(self) -> List[Dict]:
         """Get all orders for this instance"""
