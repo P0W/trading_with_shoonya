@@ -188,7 +188,7 @@ class ShoonyaTransaction:
                 target_profit,
             )
             self._square_off()
-        display_msg["Target"] = target_profit
+        display_msg["Target"] = round(target_profit, 2)
         self.logger.info(json.dumps(display_msg, indent=2))
 
     @delay_decorator(delay=10)
