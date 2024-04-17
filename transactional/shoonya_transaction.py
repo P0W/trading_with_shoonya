@@ -36,6 +36,7 @@ class ShoonyaTransaction:
         """
         self.api = api_object
         self.instance_id = instance_id
+        self.product_type = "I"  ## For MIS, "M" ## for NRML, hardcode for now
         self.transaction_manager = transaction_manager_postgres.TransactionManager(
             self.api,
             config={
@@ -262,7 +263,7 @@ class ShoonyaTransaction:
                 ## Place exit order at Market price
                 response = self.api.place_order(
                     buy_or_sell=opposite_buysell,
-                    product_type="M",
+                    product_type=self.product_type,
                     exchange=exchange,
                     tradingsymbol=tradingsymbol,
                     quantity=qty,
@@ -393,7 +394,7 @@ class ShoonyaTransaction:
                 ## place order
                 order_data = {
                     "buy_or_sell": "B",
-                    "product_type": "M",
+                    "product_type": self.product_type,
                     "exchange": get_exchange(tradingsymbol),
                     "tradingsymbol": tradingsymbol,
                     "quantity": qty,
@@ -522,7 +523,7 @@ def main(args):
             shoonya_transaction.place_order(  ## Place straddle order
                 {
                     "buy_or_sell": "S",
-                    "product_type": "M",  ## NRML
+                    "product_type": "I",  ## M for NRML, I for MIS
                     "exchange": get_exchange(symbol),
                     "tradingsymbol": symbol,
                     "quantity": qty,
@@ -547,7 +548,7 @@ def main(args):
             shoonya_transaction.place_order(  ## Place stop loss order
                 order_data={
                     "buy_or_sell": "B",
-                    "product_type": "M",  ## NRML
+                    "product_type": "I",  ## M for NRML, I for MIS
                     "exchange": get_exchange(sl_symbol),
                     "tradingsymbol": sl_symbol,
                     "quantity": qty,

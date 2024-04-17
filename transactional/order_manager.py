@@ -8,6 +8,8 @@ import time
 from typing import Any
 from typing import Dict
 
+from utils import wait_with_progress
+
 
 class OrderManager:
     """
@@ -98,17 +100,44 @@ class OrderManager:
         """
         Start the websocket
         """
-        self.api.start_websocket(
-            order_update_callback=self._event_handler_order_update,
-            subscribe_callback=self._event_handler_feed_update,
-            socket_open_callback=self._open_callback,
-            socket_error_callback=lambda e: self.logger.error("Websocket Error: %s", e),
-            socket_close_callback=lambda: self.logger.info("Websocket Closed"),
-        )
-        while self.opened is False:
-            self.logger.warning("Waiting for websocket to open")
-            time.sleep(0.5)
-        self.running = True
+        start_time = time.time()
+        timeout = 60  # Timeout after 60 seconds
+
+        while True:
+            if not self.opened:
+                self.api.start_websocket(
+                    order_update_callback=self._event_handler_order_update,
+                    subscribe_callback=self._event_handler_feed_update,
+                    socket_open_callback=self._open_callback,
+                    socket_error_callback=lambda e: self.logger.error(
+                        "Websocket Error: %s", e
+                    ),
+                    socket_close_callback=lambda: self.logger.info("Websocket Closed"),
+                )
+
+            open_start_time = time.time()
+            while self.opened is False:
+                elapsed_time = time.time() - open_start_time
+                if elapsed_time > 30:  # If WebSocket is not open after 30 seconds
+                    self.logger.warning(
+                        "WebSocket not open after 30 seconds. Retrying..."
+                    )
+                    break
+                self.logger.warning("Waiting for websocket to open")
+                time.sleep(0.5)
+
+            if self.opened:
+                self.running = True
+                break
+
+            elapsed_time = time.time() - start_time
+            if elapsed_time > timeout:
+                self.logger.error("Failed to start WebSocket after 1 minute. Exiting.")
+                break
+
+            self.logger.info("Retrying in 30 seconds...")
+            wait_with_progress(30)  # Use wait_with_progress instead of time.sleep
+            self.api.close_websocket()
 
 
 if __name__ == "__main__":
