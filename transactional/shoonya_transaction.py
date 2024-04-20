@@ -36,7 +36,7 @@ class ShoonyaTransaction:
         """
         self.api = api_object
         self.instance_id = instance_id
-        self.product_type = "I"  ## For MIS, "M" ## for NRML, hardcode for now
+        self.product_type = "M"  ## For MIS, "M" ## for NRML, hardcode for now
         self.transaction_manager = transaction_manager_postgres.TransactionManager(
             self.api,
             config={
@@ -523,7 +523,7 @@ def main(args):
             shoonya_transaction.place_order(  ## Place straddle order
                 {
                     "buy_or_sell": "S",
-                    "product_type": "I",  ## M for NRML, I for MIS
+                    "product_type": "M",  ## M for NRML, I for MIS
                     "exchange": get_exchange(symbol),
                     "tradingsymbol": symbol,
                     "quantity": qty,
@@ -548,7 +548,7 @@ def main(args):
             shoonya_transaction.place_order(  ## Place stop loss order
                 order_data={
                     "buy_or_sell": "B",
-                    "product_type": "I",  ## M for NRML, I for MIS
+                    "product_type": "M",  ## M for NRML, I for MIS
                     "exchange": get_exchange(sl_symbol),
                     "tradingsymbol": sl_symbol,
                     "quantity": qty,
