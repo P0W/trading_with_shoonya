@@ -9,6 +9,7 @@ from typing import Any
 from typing import Dict
 
 from utils import wait_with_progress
+from utils import full_stack
 
 
 class OrderManager:
@@ -110,7 +111,7 @@ class OrderManager:
                     subscribe_callback=self._event_handler_feed_update,
                     socket_open_callback=self._open_callback,
                     socket_error_callback=lambda e: self.logger.error(
-                        "Websocket Error: %s", e
+                        "Websocket Error: %s\n%s", e, full_stack()
                     ),
                     socket_close_callback=lambda: self.logger.info("Websocket Closed"),
                 )
