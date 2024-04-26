@@ -453,11 +453,11 @@ def main(args):
     validate(qty, index)
 
     strikes_data = get_staddle_strike(api, symbol_index=index, qty=qty)
+    min_ltp = min(float(strikes_data["ce_ltp"]), float(strikes_data["pe_ltp"]))
     if same_premium and not show_strikes:
         ## keep checking for same premium, if not same, keep updating the strikes,
         ## after every 5 minutes
         diff = abs(float(strikes_data["ce_ltp"]) - float(strikes_data["pe_ltp"]))
-        min_ltp = min(float(strikes_data["ce_ltp"]), float(strikes_data["pe_ltp"]))
         per_change = (diff / min_ltp) * 100
         while per_change > 25:  ## if difference is more than 25%, re-check the strikes
             ## Display ltp values too
@@ -475,6 +475,7 @@ def main(args):
             wait_with_progress(300)
             strikes_data = get_staddle_strike(api, symbol_index=index, qty=qty)
             diff = abs(float(strikes_data["ce_ltp"]) - float(strikes_data["pe_ltp"]))
+            min_ltp = min(float(strikes_data["ce_ltp"]), float(strikes_data["pe_ltp"]))
             per_change = (diff / min_ltp) * 100
 
     premium = qty * (float(strikes_data["ce_ltp"]) + float(strikes_data["pe_ltp"]))
@@ -517,7 +518,7 @@ def main(args):
             sl_ltp = float(strikes_data[f"{item}_sl_ltp"])
             sl_ltp = round_to_point5(sl_ltp * sl_factor)
             trigger = sl_ltp - 0.5
-            book_profit_ltp = round_to_point5(ltp * book_profit)
+            book_profit_ltp = round_to_point5(min_ltp * book_profit)
             code_sl = f"{strikes_data[f'{item}_sl_code']}"
 
             shoonya_transaction.place_order(  ## Place straddle order
@@ -581,7 +582,7 @@ def main(args):
             shoonya_transaction.cancel_on_profit(
                 target_profit=target_mtm
             )  ## Cancel all orders if target is reached
-            shoonya_transaction.exit_on_book_profit()  ## Exit if book profit is reached on each leg
+            # shoonya_transaction.exit_on_book_profit()  ## Exit if book profit is reached on each leg
             shoonya_transaction.unsubscribe(  ## Unsubscribe from straddle symbol,
                 ## if exit order is placed or order is cancelled
                 ## or book profit order is executed
@@ -593,13 +594,13 @@ def main(args):
                 remarks=f"{subscribe_msg}_unsubscribe",
                 parent_remarks=subscribe_msg,
             )
-            shoonya_transaction.place_book_profit_sl(  ## Place the book profit order
-                book_profit_price=book_profit_ltp, qty=qty
-            )
+            # shoonya_transaction.place_book_profit_sl(  ## Place the book profit order
+            #     book_profit_price=book_profit_ltp, qty=qty
+            # )
             ## Modify book profit order
-            shoonya_transaction.modify_book_profit_sl(book_profit_factor=book_profit)
+            # shoonya_transaction.modify_book_profit_sl(book_profit_factor=book_profit)
             ## Re-enqueue rejected order
-            shoonya_transaction.re_enqueue_rejected_order()
+            # shoonya_transaction.re_enqueue_rejected_order()
             shoonya_transaction.display_stats()
 
 
