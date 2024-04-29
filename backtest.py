@@ -207,8 +207,8 @@ def main(ce_srike_file: str, pe_srike_file: str):
     cerebro = bt.Cerebro()
     cerebro.addstrategy(ShortStraddle, sl_factor=1.55, target_factor=0.4)
 
-    pe_df = pd.read_csv(ce_srike_file, parse_dates=True, index_col=0)
-    ce_df = pd.read_csv(pe_srike_file, parse_dates=True, index_col=0)
+    pe_df = pd.read_csv(pe_srike_file, parse_dates=True, index_col=0)
+    ce_df = pd.read_csv(ce_srike_file, parse_dates=True, index_col=0)
 
     ## get the starttime which is same for both the dataframes, the first one
     start_time = max(pe_df.index[0], ce_df.index[0])
