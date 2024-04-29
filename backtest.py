@@ -10,6 +10,8 @@ from datetime import time
 import backtrader as bt
 import pandas as pd
 
+from const import LOT_SIZE
+
 
 ## pylint: disable=too-many-instance-attributes
 class ShortStraddle(bt.Strategy):
@@ -19,6 +21,7 @@ class ShortStraddle(bt.Strategy):
         ("sl_factor", 1.75),
         ("target_factor", 0.4),
         ("exit_time", time(15, 15)),
+        ("thresh_diff", 0.25),
     )
 
     def __init__(self):
@@ -40,6 +43,9 @@ class ShortStraddle(bt.Strategy):
     ## pylint: disable=no-member
     def next(self):
         """Define the trading logic"""
+        if self.order:
+            return
+
         ce_time = self.ce_data.datetime.datetime()
         pe_time = self.pe_data.datetime.datetime()
         ## check if both the data feeds are in sync
@@ -50,56 +56,49 @@ class ShortStraddle(bt.Strategy):
 
         current_datetime = ce_time
 
-        if not self.position and current_datetime.time() >= time(10, 00):
-            self.ce_avg = self.ce_data.close[0]
-            self.pe_avg = self.pe_data.close[0]
+        if not self.position:
+            if not self.straddle_premium and current_datetime.time() >= time(10, 00):
+                self.ce_avg = self.ce_data.close[0]
+                self.pe_avg = self.pe_data.close[0]
 
-            ## If the difference between the put and call options is less than
-            ## 25% of the average of the two, place the straddle
-            if (
-                abs(self.ce_avg - self.pe_avg) / ((self.ce_avg + self.pe_avg) / 2)
-                > 0.25
-            ):
-                return
-            self.straddle_premium = self.ce_avg + self.pe_avg
-            self.target = self.straddle_premium * self.params.target_factor
-            self.ce_sl = self.ce_avg * self.params.sl_factor
-            self.pe_sl = self.pe_avg * self.params.sl_factor
+                ## If the difference between the put and call options is less than
+                ## 25% of the average of the two, place the straddle
+                if (
+                    abs(self.ce_avg - self.pe_avg) / ((self.ce_avg + self.pe_avg) / 2)
+                    > self.params.thresh_diff
+                ):
+                    self.log(
+                        "Not taking PE :%.2f CE: %.2f" % (self.pe_avg, self.ce_avg)
+                    )
+                    return
+                self.straddle_premium = self.ce_avg + self.pe_avg
+                self.target = self.straddle_premium * self.params.target_factor
+                self.ce_sl = self.ce_avg * self.params.sl_factor
+                self.pe_sl = self.pe_avg * self.params.sl_factor
 
-            self.log(f"Straddle Placed Price: {self.straddle_premium}")
-            self.log(f"CE Avg: {self.ce_avg}")
-            self.log(f"PE Avg: {self.pe_avg}")
-            self.log(f"CE SL: {self.ce_sl}")
-            self.log(f"PE SL: {self.pe_sl}")
+                self.log(f"Straddle Placed Price: {self.straddle_premium}")
+                self.log(f"CE Avg: {self.ce_avg}")
+                self.log(f"PE Avg: {self.pe_avg}")
+                self.log(f"CE SL: {self.ce_sl}")
+                self.log(f"PE SL: {self.pe_sl}")
 
-            self.o["ce"] = self.sell(data=self.ce_data, size=1, price=self.ce_avg)
-            self.o["pe"] = self.sell(data=self.pe_data, size=1, price=self.pe_avg)
+                self.o["ce"] = self.sell(data=self.ce_data, price=self.ce_avg)
+                self.o["pe"] = self.sell(data=self.pe_data, price=self.pe_avg)
 
-            self.buy(
-                data=self.ce_data, size=1, price=self.ce_sl, exectype=bt.Order.Stop
-            )
-            self.buy(
-                data=self.pe_data, size=1, price=self.pe_sl, exectype=bt.Order.Stop
-            )
+                self.buy(data=self.ce_data, price=self.ce_sl, exectype=bt.Order.Stop)
+                self.buy(data=self.pe_data, price=self.pe_sl, exectype=bt.Order.Stop)
 
-        elif self.position and current_datetime.time() == self.params.exit_time:
-            self.close(data=self.ce_data)
-            self.close(data=self.pe_data)
-            self.log("Exiting the trade")
+        else:
+            if current_datetime.time() == self.params.exit_time:
+                self.close(data=self.ce_data)
+                self.close(data=self.pe_data)
+                self.log("Exiting the trade")
 
-        ## exit if target is hit premium is decayed by 40%
-        elif self.position and self.mtm >= self.target:
-            self.close(data=self.ce_data)
-            self.close(data=self.pe_data)
-            self.log("Target Hit, Exiting the trade")
-
-        if self.position:
-            self.mtm = (
-                self.ce_avg
-                + self.pe_avg
-                - (self.ce_data.close[0] + self.pe_data.close[0])
-            )
-            # self.log(f"Straddle Premium: {self.straddle_premium}")
+            ## exit if target is hit premium is decayed by 40%
+            elif self.mtm >= self.target:
+                self.close(data=self.ce_data)
+                self.close(data=self.pe_data)
+                self.log("Target Hit, Exiting the trade")
 
     def log(self, txt, dt=None):
         """Logging function fot this strategy"""
@@ -116,7 +115,7 @@ class ShortStraddle(bt.Strategy):
             ## display buy/sell order details
             buy_sell = "BUY" if order.isbuy() else "SELL"
             self.log(
-                f"{buy_sell} ORDER: {order.getstatusname()}, Price: {order.created.price}"
+                f"{buy_sell} ORDER: {order.getstatusname()}, Price: {order.created.price} Size: {order.created.size}"
             )
             return
 
@@ -129,12 +128,12 @@ class ShortStraddle(bt.Strategy):
             ## pylint: disable=line-too-long
             if order.isbuy():
                 self.log(
-                    f"STOP LOSS ORDER EXECUTED, Price: {order.executed.price}, Cost: {order.executed.value}, Comm: {order.executed.comm}"
+                    f"STOP LOSS ORDER EXECUTED, Price: {order.executed.price}, Size: {order.executed.size}  Cost: {order.executed.value}, Comm: {order.executed.comm}"
                 )
 
             else:  # Sell
                 self.log(
-                    f"SELL ORDER EXECUTED, Price: {order.executed.price}, Cost: {order.executed.value}, Comm: {order.executed.comm}"
+                    f"SELL ORDER EXECUTED, Price: {order.executed.price}, Size: {order.executed.size} Cost: {order.executed.value}, Comm: {order.executed.comm}"
                 )
         else:
             self.log("ORDER STATUS: %s", order.getstatusname())
@@ -145,12 +144,12 @@ class ShortStraddle(bt.Strategy):
 class FixedSize(bt.Sizer):
     """Fixed size sizer"""
 
-    params = (("stake", 50),)
+    params = (("index", "NIFTY"),)
 
     ## pylint: disable=no-member
     def _getsizing(self, comminfo, cash, data, isbuy):
         """Returns the stake size"""
-        return self.params.stake
+        return LOT_SIZE[self.params.index]
 
 
 class FixedCommisionScheme(bt.CommInfoBase):
@@ -202,10 +201,16 @@ class Expectancy(bt.Analyzer):
             return {"expectancy": 0}
 
 
-def main(ce_srike_file: str, pe_srike_file: str):
+def main(ce_srike_file: str, pe_srike_file: str, index: str):
     """Main function to run the backtest"""
     cerebro = bt.Cerebro()
-    cerebro.addstrategy(ShortStraddle, sl_factor=1.55, target_factor=0.4)
+    cerebro.addstrategy(
+        ShortStraddle,
+        sl_factor=1.55,
+        target_factor=0.4,
+        exit_time=time(15, 29),
+        thresh_diff=0.75,
+    )
 
     pe_df = pd.read_csv(pe_srike_file, parse_dates=True, index_col=0)
     ce_df = pd.read_csv(ce_srike_file, parse_dates=True, index_col=0)
@@ -229,10 +234,10 @@ def main(ce_srike_file: str, pe_srike_file: str):
     cerebro.adddata(bt.feeds.PandasData(dataname=ce_df), name="ce_data")
 
     ## set cash
-    cerebro.addsizer(FixedSize)
+    cerebro.addsizer(FixedSize, index=index)
     cerebro.broker.setcash(100000.0)
     ## Add a flat fee of 10 INR per trade
-    cerebro.broker.addcommissioninfo(FixedCommisionScheme())
+    cerebro.broker.addcommissioninfo(FixedCommisionScheme)
     ## Add analyzers
     cerebro.addanalyzer(bt.analyzers.PyFolio, _name="pyfolio")
     # Add analyzers
@@ -269,7 +274,13 @@ def main(ce_srike_file: str, pe_srike_file: str):
     logging.info("Trades Lost: %d", lost)
     logging.info("Drawdown: %.2f", drawndown["max"]["drawdown"])
 
-    cerebro.plot()
+    cerebro.plot(
+        style="candlestick",
+        barup="green",
+        bardown="red",
+        fmt_x_ticks="%H:%M",
+        fmt_x_data="%H:%M",
+    )
 
 
 ## add argument for ce and pe files ATM strike price and index
@@ -291,7 +302,7 @@ def get_args():
         type=str,
         required=True,
         help="The index value of the ATM strike price",
-        choices=["BANKEX", "NIFTY", "SENSEX", "FINNIFTY", "BANKNIFTY"],
+        choices=["BANKEX", "NIFTY", "SENSEX", "FINNIFTY", "BANKNIFTY", "MIDCPNIFTY"],
     )
     ## add expiry
     parser.add_argument(
@@ -328,4 +339,4 @@ if __name__ == "__main__":
 
     logging.info("CE Strike File: %s", ce_srike)
     logging.info("PE Strike File: %s", pe_srike)
-    main(ce_srike, pe_srike)
+    main(ce_srike, pe_srike, args.index)
