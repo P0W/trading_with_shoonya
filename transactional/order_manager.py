@@ -144,10 +144,26 @@ class OrderManager:
 if __name__ == "__main__":
     import client_shoonya
     import utils
+    import json
 
     utils.configure_logger("DEBUG", "test_order_manager")
     api = client_shoonya.ShoonyaApiPy(cred_file="../cred.yml", force_login=False)
-    om = OrderManager(api, {})
-    om.start()
-    om.subscribe("MCX|426261")
-    time.sleep(20)
+    # om = OrderManager(api, {})
+    # om.start()
+    # om.subscribe("MCX|426261")
+    # time.sleep(20)
+    # ret = api.option_greek(expiredate ='02-MAY-2024',StrikePrice='22500',SpotPrice  = '22419.95',InterestRate  = '0.06',Volatility = '10.9',OptionType='CE')
+    # print(json.dumps(ret, indent=4))
+
+    ## last 1 days
+    lastBusDay = datetime.datetime.now() - datetime.timedelta(days=1)
+    lastBusDay = lastBusDay.replace(hour=0, minute=0, second=0, microsecond=0)
+    ret = api.get_time_price_series(exchange='NFO', token='63973', starttime=lastBusDay.timestamp(), interval=1)
+    #print(json.dumps(ret, indent=4))
+    with open("data\\NIFTY02MAY24P25800.json", "w") as f:
+        json.dump(ret, f, indent=2)
+
+    # ret = api.get_time_price_series(exchange='NDO', token='68109', starttime=lastBusDay.timestamp(), interval=1)
+    # #print(json.dumps(ret, indent=4))
+    # with open("data\\NIFTY25APR24P22400.json", "w") as f:
+    #     json.dump(ret, f, indent=2)
