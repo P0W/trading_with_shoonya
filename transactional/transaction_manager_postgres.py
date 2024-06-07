@@ -43,6 +43,7 @@ class TransactionManager(order_manager.OrderManager):
         conn_string = f"user={config['user']} \
             password={config['password']} \
                 port={config['port']} \
+                host=localhost\
                     dbname={config['dbname']}"
         self.logger.info("Connecting to database %s", conn_string)
         self.instance_id = config["instance_id"]
