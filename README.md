@@ -12,7 +12,7 @@ It works (and tested) with NIFTY, BANKNIFTY, FINNIFTY, SENSEX, BANKEX, MIDCPNIFT
 2. On the breakeven strike (CE = ATM + collected premium, PE = ATM - collected premium), place a stop loss order at 1.75 % (configurable) of the strike price
 3. Place a book profit stop loss order at 60 % (configurable) on the individual ATM legs and trail the stop loss for every 5% drop in price set stop loss to 60% of last set price.
 4. Monitor the target = 35% of collected premimum (configurable)
-5. Cancel pending orders if either target mtm is achieved or both legs profit is booked or time is 15:31 IST or inital ATM straddle is rejected
+5. Cancel pending orders if either target mtm is achieved ~~or both legs profit is booked~~ or time is 15:31 IST or inital ATM straddle is rejected
 
 ## The Secret Sauce
 
