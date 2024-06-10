@@ -84,6 +84,25 @@
             background-color: #45a049;
             color: white;
         }
+
+        .json-input {
+            margin-top: 10px;
+        }
+
+        .json-input label {
+            display: block;
+            font-size: 0.8em;
+            color: #888;
+        }
+
+        .json-input textarea {
+            width: 100%;
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+            resize: vertical;
+        }
     </style>
 </head>
 
@@ -108,7 +127,17 @@
             <td>{{ endpoint.route }}</td>
             <td>{{ endpoint.method }}</td>
             <td>{{ endpoint.description }}</td>
-            <td><button class="call-button" onclick="callEndpoint('{{ endpoint.route }}')">Call</button></td>
+            <td>
+                {% if endpoint.method == 'POST' %}
+                <div class="json-input">
+                    <label for="json-input-{{ endpoint.route }}">JSON Input:</label>
+                    <textarea id="json-input-{{ endpoint.route }}" name="json-input-{{ endpoint.route }}" rows="2"
+                        cols="30"></textarea>
+                </div>
+                {% endif %}
+                <button class="call-button"
+                    onclick="callEndpoint('{{ endpoint.route }}', '{{ endpoint.method }}')">Call</button>
+            </td>
         </tr>
         {% endfor %}
     </table>
@@ -152,17 +181,32 @@
                 });
         }
 
-        function callEndpoint(route) {
+        function callEndpoint(route, method = 'GET') {
             // Show the loading indicator
             document.getElementById('loading').style.display = 'block';
             // Clear the output
             clearOutput();
 
-            fetch(route, {
+            let options = {
+                method: method,
                 headers: {
                     'Authorization': `Bearer ${jwtToken}`
                 }
-            })
+            };
+
+            // If method is POST, get JSON input and add to request body
+            if (method === 'POST') {
+                let jsonInput = document.getElementById(`json-input-${route}`).value;
+                try {
+                    options.body = JSON.parse(jsonInput);
+                    options.headers['Content-Type'] = 'application/json';
+                } catch (e) {
+                    console.error('Error parsing JSON input:', e);
+                    return;
+                }
+            }
+
+            fetch(route, options)
                 .then(response => response.json())
                 .then(data => {
                     document.getElementById('output').value = JSON.stringify(data, null, 2);

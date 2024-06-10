@@ -2,15 +2,17 @@
 This module is used to place orders for straddle strategy using Shoonya API.
 Uses relational database to store orders and their status.
 """
-
 import json
 import logging
 import sys
 import time
 from typing import Dict
 
+import transaction_manager_postgres  ## pylint: disable=import-error
+
 from client_shoonya import ShoonyaApiPy
 from const import OrderStatus
+from data_store import DataStore  ## pylint: disable=import-error
 from utils import configure_logger
 from utils import delay_decorator
 from utils import get_exchange
@@ -21,8 +23,6 @@ from utils import parse_args
 from utils import round_to_point5
 from utils import validate
 from utils import wait_with_progress
-
-import transaction_manager_postgres  ## pylint: disable=import-error
 
 
 class ShoonyaTransaction:
@@ -501,6 +501,10 @@ def main(args):
         target_mtm,
     )
 
+    redis_store = DataStore(instance_id)
+    ## Add target_mtm to data store
+    redis_store.set_param("target_mtm", target_mtm)
+
     if show_strikes:
         sys.exit(0)
 
@@ -518,7 +522,9 @@ def main(args):
             sl_ltp = float(strikes_data[f"{item}_sl_ltp"])
             sl_ltp = round_to_point5(sl_ltp * sl_factor)
             trigger = sl_ltp - 0.5
-            book_profit_ltp = round_to_point5(min_ltp * book_profit)
+            book_profit_ltp = round_to_point5(
+                min_ltp * book_profit
+            )  ## pylint: disable=unused-variable
             code_sl = f"{strikes_data[f'{item}_sl_code']}"
 
             shoonya_transaction.place_order(  ## Place straddle order
@@ -580,9 +586,10 @@ def main(args):
                 cancel_remarks=f"{subscribe_msg}_stop_loss",
             )
             shoonya_transaction.cancel_on_profit(
-                target_profit=target_mtm
+                target_profit=redis_store.retrieve_param("target_mtm")
             )  ## Cancel all orders if target is reached
-            # shoonya_transaction.exit_on_book_profit()  ## Exit if book profit is reached on each leg
+            ## Exit if book profit is reached on each leg
+            # shoonya_transaction.exit_on_book_profit()
             shoonya_transaction.unsubscribe(  ## Unsubscribe from straddle symbol,
                 ## if exit order is placed or order is cancelled
                 ## or book profit order is executed

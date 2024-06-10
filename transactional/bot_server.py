@@ -12,6 +12,7 @@ from typing import Tuple
 import psutil
 import psycopg2.extras
 import yaml
+from data_store import DataStore
 from flask import Flask
 from flask import jsonify
 from flask import render_template
@@ -46,6 +47,7 @@ class BotServer:
         self.pids = []
         self.instances = []
         self.update_pids()
+        self.redis_store = DataStore()
         if self.pids:
             self.instances = [f"shoonya_{pid}" for pid in self.pids]
             self.logger.debug("Instances running: %s", self.instances)
@@ -185,17 +187,28 @@ class BotServer:
             pnl[instance] = self._get_pnl(instance)
         return pnl
 
-    def kill_bot(self):
+    def kill_bot(self, instance_id=None):
         """Kill all instances"""
         try:
+            if not instance_id:
+                for pid in self.pids:
+                    if os.name == "posix":
+                        os.kill(pid, signal.SIGKILL)  ## pylint: disable=no-member
+                    else:
+                        os.kill(pid, signal.SIGTERM)
+                self.pids = []
+                self.instances = []
+                return True
             for pid in self.pids:
-                if os.name == "posix":
-                    os.kill(pid, signal.SIGKILL)  ## pylint: disable=no-member
-                else:
-                    os.kill(pid, signal.SIGTERM)
-            self.pids = []
-            self.instances = []
-            return True
+                if instance_id in f"shoonya_{pid}":
+                    if os.name == "posix":
+                        os.kill(pid, signal.SIGKILL)  ## pylint: disable=no-member
+                    else:
+                        os.kill(pid, signal.SIGTERM)
+                    self.pids.remove(pid)
+                    self.instances.remove(instance_id)
+                    return True
+            return False
         except Exception as e:  ## pylint: disable=broad-exception-caught
             self.logger.error("Failed to kill instances %s", e)
             return False
@@ -211,6 +224,15 @@ class BotServer:
         ## get load average
         vm_stats["load_avg"] = psutil.cpu_percent(interval=1, percpu=True)
         return vm_stats
+
+    def modify_target(self, target, instance_id):
+        """Modify target for an instance"""
+        try:
+            self.redis_store.set_param("target_mtm", target, instance_id)
+            return True
+        except Exception as e:  ## pylint: disable=broad-exception-caught
+            self.logger.error("Failed to modify target %s", e)
+            return False
 
 
 bot_server = BotServer(
@@ -244,8 +266,13 @@ def home():
         },
         {
             "route": "/api/v1/shoonya/kill",
-            "method": "GET",
-            "description": "Kill all instances",
+            "method": "POST",
+            "description": "Kill an instances",
+        },
+        {
+            "route": "/api/v1/shoonya/target",
+            "method": "POST",
+            "description": "Modify target for an instance",
         },
     ]
     return render_template("index.html", endpoints=endpoints)
@@ -286,13 +313,24 @@ def get_errors():
     return jsonify(bot_server.get_errors()), 200
 
 
-@app.route("/api/v1/shoonya/kill", methods=["GET"])
+@app.route("/api/v1/shoonya/kill", methods=["POST"])
 @jwt_required()
 def kill_bot():
     """Kill all instances"""
-    if bot_server.kill_bot():
-        return jsonify({"message": "All instances killed"}), 200
-    return jsonify({"message": "Failed to kill instances"}), 200
+    ## Get instance_id from request body
+    try:
+        data = request.get_json()
+        if not data:
+            if bot_server.kill_bot():
+                return jsonify({"message": "All instances killed"}), 200
+            return jsonify({"message": "Failed to kill all instances"}), 200
+
+        instance_id = data.get("instance_id")
+        if bot_server.kill_bot(instance_id):
+            return jsonify({"message": "Instance killed"}), 200
+        return jsonify({"message": "Failed to kill instance"}), 200
+    except Exception as e:  ## pylint: disable=broad-exception-caught
+        return jsonify({"message": f"Failed to kill instances {e}"}), 200
 
 
 @app.route("/api/v1/shoonya/refresh", methods=["GET"])
@@ -302,6 +340,24 @@ def refresh_pid():
     if bot_server.update_pids():
         return jsonify({"message": "Pids updated"}), 200
     return jsonify({"message": "No instances running"}), 200
+
+
+@app.route("/api/v1/shoonya/target", methods=["POST"])
+@jwt_required()
+def modify_target():
+    """Modify target for an instance"""
+    ## Request body should have target
+    try:
+        data = request.get_json()
+        target = data.get("target")
+        instance_id = data.get("instance_id")
+        if not target:
+            return jsonify({"msg": "Missing target"}), 400
+        if bot_server.modify_target(target, instance_id):
+            return jsonify({"message": "Target modified"}), 200
+        return jsonify({"message": "Failed to modify target"}), 200
+    except Exception as e:  ## pylint: disable=broad-exception-caught
+        return jsonify({"message": f"Failed to modify target {e}"}), 200
 
 
 if __name__ == "__main__":
