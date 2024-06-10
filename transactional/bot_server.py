@@ -44,6 +44,7 @@ class BotServer:
     def __init__(self, config: dict):
         self.logger = logging.getLogger(__name__)
         self.pids = []
+        self.instances = []
         self.update_pids()
         if self.pids:
             self.instances = [f"shoonya_{pid}" for pid in self.pids]

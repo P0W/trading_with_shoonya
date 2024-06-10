@@ -117,12 +117,17 @@
     <textarea id="output"></textarea>
     <script>
         let jwtToken = '';
+        function clearOutput() {
+            document.getElementById('output').value = '';
+        }
         function signIn() {
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
 
             // Show the loading indicator
             document.getElementById('loading').style.display = 'block';
+            // Clear the output
+            clearOutput();
 
             fetch('/api/v1/shoonya/signin', {
                 method: 'POST',
@@ -150,6 +155,8 @@
         function callEndpoint(route) {
             // Show the loading indicator
             document.getElementById('loading').style.display = 'block';
+            // Clear the output
+            clearOutput();
 
             fetch(route, {
                 headers: {
