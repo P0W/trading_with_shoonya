@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>API Endpoints</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+
+        th {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        #output {
+            width: 100%;
+            height: 200px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>API Endpoints</h1>
+    <form id="signinForm" onsubmit="event.preventDefault(); signIn();">
+        <label for="username">Username:</label><br>
+        <input type="text" id="username" name="username"><br>
+        <label for="password">Password:</label><br>
+        <input type="password" id="password" name="password"><br>
+        <input type="submit" value="Sign In">
+    </form>
+    <table>
+        <tr>
+            <th>Endpoint</th>
+            <th>Method</th>
+            <th>Description</th>
+            <th>Action</th>
+        </tr>
+        {% for endpoint in endpoints %}
+        <tr>
+            <td>{{ endpoint.route }}</td>
+            <td>{{ endpoint.method }}</td>
+            <td>{{ endpoint.description }}</td>
+            <td><button onclick="callEndpoint('{{ endpoint.route }}')">Call</button></td>
+        </tr>
+        {% endfor %}
+    </table>
+    <h2>Output:</h2>
+    <textarea id="output"></textarea>
+    <script>
+        let jwtToken = '';
+
+        function signIn() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            fetch('/api/v1/shoonya/signin', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ username, password })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    jwtToken = data.access_token;
+                    document.getElementById('output').value = 'Signed in successfully';
+                })
+                .catch((error) => {
+                    console.error('Error:', error);
+                });
+        }
+
+        function callEndpoint(route) {
+            fetch(route, {
+                headers: {
+                    'Authorization': `Bearer ${jwtToken}`
+                }
+            })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('output').value = JSON.stringify(data, null, 2);
+                })
+                .catch((error) => {
+                    console.error('Error:', error);
+                });
+        }
+    </script>
+</body>
+
+</html>

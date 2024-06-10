@@ -12,7 +12,7 @@ from typing import Tuple
 import psutil
 import psycopg2.extras
 import yaml
-from flask import Flask
+from flask import Flask, render_template
 from flask import jsonify
 from flask import request
 from flask_jwt_extended import create_access_token
@@ -24,7 +24,7 @@ from werkzeug.security import check_password_hash
 from werkzeug.security import generate_password_hash
 
 # Read YAML file
-with open("config.yml", "r", encoding="utf-8") as yml_file:
+with open("cred.yml", "r", encoding="utf-8") as yml_file:
     yml_config = yaml.safe_load(yml_file)
 
 app = Flask(__name__)
@@ -200,6 +200,17 @@ bot_server = BotServer(
     {"user": "admin", "password": "admin", "port": 6000, "dbname": "shoonya"}
 )
 
+
+@app.route('/shoonya/', methods=['GET'])
+def home():
+    endpoints = [
+        {"route": "/api/v1/shoonya/signin", "method": "POST", "description": "Sign in"},
+        {"route": "/api/v1/shoonya/pnl", "method": "GET", "description": "Get PnL for all instances"},
+        {"route": "/api/v1/shoonya/vmstats", "method": "GET", "description": "Get VM stats"},
+        {"route": "/api/v1/shoonya/errors", "method": "GET", "description": "Get errors from the log file"},
+        {"route": "/api/v1/shoonya/kill", "method": "GET", "description": "Kill all instances"},
+    ]
+    return render_template('index.html', endpoints=endpoints)
 
 @app.route("/api/v1/shoonya/signin", methods=["POST"])
 def signin():
