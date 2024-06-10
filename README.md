@@ -94,4 +94,19 @@ Sample runs
    python .\shoonya_transaction.py --cred-file ..\cred.yml --index FINNIFTY --qty 40 --target-mtm 221.00 --show-strikes
 ```
 
+## Deploying the trading bot
+
+1. Setup the cron job for daily expiry trading. Refer `expiry_runner.sh`
+2. Kick start the `bot_server.py`
+   
+```bash
+  python bot_server.py
+```
+
+Browse to `localhost:5000` and call the appropiate endpoint
+
+![Shoonya_Trading_Bot](https://github.com/P0W/trading_with_shoonya/assets/5833233/9941afdb-aa88-4f68-87d9-a7a2dc3fbefd)
+
+  
+
 **NOTE**: The `rust` contents are not yet complete. I am trying to implement this on rust sooner.
