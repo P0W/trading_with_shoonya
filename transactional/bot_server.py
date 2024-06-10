@@ -108,11 +108,12 @@ class BotServer:
             ):
                 file_name = file
                 break
-
-        with open(file_name, "r", encoding="utf-8") as f:
-            logs = f.read()
-        errors = [line for line in logs.split("\n") if "ERROR" in line]
-        return errors
+        if file_name:
+            with open(file_name, "r", encoding="utf-8") as f:
+                logs = f.read()
+            errors = [line for line in logs.split("\n") if "ERROR" in line]
+            return errors
+        return {"message": "No errors found"}
 
     def _get_pnl(self, instance_id) -> Tuple[float, Dict]:
         """
@@ -201,16 +202,33 @@ bot_server = BotServer(
 )
 
 
-@app.route('/shoonya/', methods=['GET'])
+@app.route("/shoonya/", methods=["GET"])
 def home():
+    """Home page"""
     endpoints = [
-        {"route": "/api/v1/shoonya/signin", "method": "POST", "description": "Sign in"},
-        {"route": "/api/v1/shoonya/pnl", "method": "GET", "description": "Get PnL for all instances"},
-        {"route": "/api/v1/shoonya/vmstats", "method": "GET", "description": "Get VM stats"},
-        {"route": "/api/v1/shoonya/errors", "method": "GET", "description": "Get errors from the log file"},
-        {"route": "/api/v1/shoonya/kill", "method": "GET", "description": "Kill all instances"},
+        {
+            "route": "/api/v1/shoonya/pnl",
+            "method": "GET",
+            "description": "Get PnL for all instances",
+        },
+        {
+            "route": "/api/v1/shoonya/vmstats",
+            "method": "GET",
+            "description": "Get VM stats",
+        },
+        {
+            "route": "/api/v1/shoonya/errors",
+            "method": "GET",
+            "description": "Get errors from the log file",
+        },
+        {
+            "route": "/api/v1/shoonya/kill",
+            "method": "GET",
+            "description": "Kill all instances",
+        },
     ]
-    return render_template('index.html', endpoints=endpoints)
+    return render_template("index.html", endpoints=endpoints)
+
 
 @app.route("/api/v1/shoonya/signin", methods=["POST"])
 def signin():
@@ -256,4 +274,4 @@ def kill_bot():
 
 
 if __name__ == "__main__":
-    app.run(port=5000)
+    app.run(host="0.0.0.0", port=5000)

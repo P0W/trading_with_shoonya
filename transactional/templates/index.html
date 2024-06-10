@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>API Endpoints</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+
+        #signinForm {
+            width: 300px;
+            margin: 0 auto;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        #signinForm label {
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        #signinForm input[type="text"],
+        #signinForm input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        #signinForm input[type="submit"] {
+            width: 100%;
+            padding: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        #signinForm input[type="submit"]:hover {
+            background-color: #45a049;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+
+        th {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        #output {
+            width: 100%;
+            height: 200px;
+        }
+
+        .call-button {
+            background-color: #4CAF50;
+            /* Green */
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            transition-duration: 0.4s;
+        }
+
+        .call-button:hover {
+            background-color: #45a049;
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>API Endpoints</h1>
+    <form id="signinForm" onsubmit="event.preventDefault(); signIn();">
+        <label for="username">Username:</label>
+        <input type="text" id="username" name="username">
+        <label for="password">Password:</label>
+        <input type="password" id="password" name="password">
+        <input type="submit" value="Sign In">
+    </form>
+    <table>
+        <tr>
+            <th>Endpoint</th>
+            <th>Method</th>
+            <th>Description</th>
+            <th>Action</th>
+        </tr>
+        {% for endpoint in endpoints %}
+        <tr>
+            <td>{{ endpoint.route }}</td>
+            <td>{{ endpoint.method }}</td>
+            <td>{{ endpoint.description }}</td>
+            <td><button class="call-button" onclick="callEndpoint('{{ endpoint.route }}')">Call</button></td>
+        </tr>
+        {% endfor %}
+    </table>
+    <p id="loading" style="display: none;">Loading...</p>
+    <h2>Output:</h2>
+    <textarea id="output"></textarea>
+    <script>
+        let jwtToken = '';
+        function signIn() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            // Show the loading indicator
+            document.getElementById('loading').style.display = 'block';
+
+            fetch('/api/v1/shoonya/signin', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ username, password })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    jwtToken = data.access_token;
+                    document.getElementById('output').value = 'Signed in successfully';
+
+                    // Hide the loading indicator
+                    document.getElementById('loading').style.display = 'none';
+                })
+                .catch((error) => {
+                    console.error('Error:', error);
+
+                    // Hide the loading indicator
+                    document.getElementById('loading').style.display = 'none';
+                });
+        }
+
+        function callEndpoint(route) {
+            // Show the loading indicator
+            document.getElementById('loading').style.display = 'block';
+
+            fetch(route, {
+                headers: {
+                    'Authorization': `Bearer ${jwtToken}`
+                }
+            })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('output').value = JSON.stringify(data, null, 2);
+
+                    // Hide the loading indicator
+                    document.getElementById('loading').style.display = 'none';
+                })
+                .catch((error) => {
+                    console.error('Error:', error);
+
+                    // Hide the loading indicator
+                    document.getElementById('loading').style.display = 'none';
+                });
+        }
+    </script>
+</body>
+
+</html>
