@@ -103,7 +103,9 @@ Sample runs
   python bot_server.py
 ```
 
-Browse to `localhost:5000` and call the appropiate endpoint
+Browse to `localhost:5000`
+1. Signin with shoonya credential to grab the JWT token
+2. Call the appropiate methods
 
 ![Shoonya_Trading_Bot](https://github.com/P0W/trading_with_shoonya/assets/5833233/9941afdb-aa88-4f68-87d9-a7a2dc3fbefd)
 
