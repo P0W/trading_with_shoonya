@@ -12,8 +12,9 @@ from typing import Tuple
 import psutil
 import psycopg2.extras
 import yaml
-from flask import Flask, render_template
+from flask import Flask
 from flask import jsonify
+from flask import render_template
 from flask import request
 from flask_jwt_extended import create_access_token
 from flask_jwt_extended import jwt_required
@@ -42,8 +43,8 @@ class BotServer:
 
     def __init__(self, config: dict):
         self.logger = logging.getLogger(__name__)
-        process_name = "shoonya_transaction.py"
-        self.pids = self._get_pids_of_process(process_name)
+        self.pids = []
+        self.update_pids()
         if self.pids:
             self.instances = [f"shoonya_{pid}" for pid in self.pids]
             self.logger.debug("Instances running: %s", self.instances)
@@ -51,7 +52,6 @@ class BotServer:
             ## No instances running
             ## Exit the program
             self.logger.error("No instances running")
-            sys.exit(-1)
         ## create a connection to the database
         conn_string = f"user={config['user']} \
             password={config['password']} \
@@ -66,7 +66,7 @@ class BotServer:
         )
 
     @contextmanager
-    def getcursor(self):
+    def _getcursor(self):
         """Get a cursor from the connection pool"""
         con = self.conn_pool.getconn()
         try:
@@ -93,6 +93,15 @@ class BotServer:
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 pass
         return pids
+
+    def update_pids(self):
+        """Update pids of the process"""
+        process_name = "shoonya_transaction.py"
+        self.pids = self._get_pids_of_process(process_name)
+        if self.pids:
+            self.instances = [f"shoonya_{pid}" for pid in self.pids]
+            return True
+        return False
 
     def get_errors(self):
         """Get errors from the log file"""
@@ -125,7 +134,7 @@ class BotServer:
         """
         rows = []
         try:
-            with self.getcursor() as cursor:
+            with self._getcursor() as cursor:
                 cursor.execute(
                     """SELECT transactions.avgprice, transactions.qty, transactions.buysell, 
                         transactions.tradingsymbol, liveltp.ltp
@@ -177,12 +186,18 @@ class BotServer:
 
     def kill_bot(self):
         """Kill all instances"""
-        for pid in self.pids:
-            if os.name == "posix":
-                os.kill(pid, signal.SIGKILL)  ## pylint: disable=no-member
-            else:
-                os.kill(pid, signal.SIGTERM)
-        self.conn_pool.closeall()
+        try:
+            for pid in self.pids:
+                if os.name == "posix":
+                    os.kill(pid, signal.SIGKILL)  ## pylint: disable=no-member
+                else:
+                    os.kill(pid, signal.SIGTERM)
+            self.pids = []
+            self.instances = []
+            return True
+        except Exception as e:  ## pylint: disable=broad-exception-caught
+            self.logger.error("Failed to kill instances %s", e)
+            return False
 
     def vm_stats(self):
         """Get VM stats"""
@@ -206,6 +221,11 @@ bot_server = BotServer(
 def home():
     """Home page"""
     endpoints = [
+        {
+            "route": "/api/v1/shoonya/refresh",
+            "method": "GET",
+            "description": "Refresh instances",
+        },
         {
             "route": "/api/v1/shoonya/pnl",
             "method": "GET",
@@ -269,8 +289,18 @@ def get_errors():
 @jwt_required()
 def kill_bot():
     """Kill all instances"""
-    bot_server.kill_bot()
-    return jsonify({"message": "All instances killed"}), 200
+    if bot_server.kill_bot():
+        return jsonify({"message": "All instances killed"}), 200
+    return jsonify({"message": "Failed to kill instances"}), 200
+
+
+@app.route("/api/v1/shoonya/refresh", methods=["GET"])
+@jwt_required()
+def refresh_pid():
+    """Refresh pids"""
+    if bot_server.update_pids():
+        return jsonify({"message": "Pids updated"}), 200
+    return jsonify({"message": "No instances running"}), 200
 
 
 if __name__ == "__main__":
