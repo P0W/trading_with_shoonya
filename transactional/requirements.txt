@@ -11,3 +11,6 @@ pylint
 colorlog
 psycopg2
 tqdm
+flask
+flask-jwt-extended
+psutil
