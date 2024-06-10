@@ -132,7 +132,9 @@
                 <div class="json-input">
                     <label for="json-input-{{ endpoint.route }}">JSON Input:</label>
                     <textarea id="json-input-{{ endpoint.route }}" name="json-input-{{ endpoint.route }}" rows="2"
-                        cols="30"></textarea>
+                        cols="30">
+                        {"instance_id":1234, "target":4242.42}
+                    </textarea>
                 </div>
                 {% endif %}
                 <button class="call-button"
