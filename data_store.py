@@ -85,3 +85,16 @@ class DataStore:
         except (redis.RedisError, ValueError) as e:
             self.logger.error("Failed to get or cast key %s in Redis: %s", key, e)
             raise
+
+    def get_keys(self, instance_id=None):
+        """
+        Get all keys stored in Redis.
+
+        :return: List of keys stored in Redis.
+        """
+        try:
+            keys = self.r.keys(f"{instance_id}*")
+            return [key.decode("utf-8") for key in keys]
+        except redis.RedisError as e:
+            self.logger.error("Failed to get keys in Redis: %s", e)
+            raise

@@ -222,13 +222,7 @@
                 // If method is POST, get JSON input and add to request body
                 if (method === 'POST') {
                     let jsonInput = document.getElementById(`json-input-${route}`).value;
-                    try {
-                        options.body = JSON.parse(jsonInput);
-                        options.headers['Content-Type'] = 'application/json';
-                    } catch (e) {
-                        console.error('Error parsing JSON input:', e);
-                        return;
-                    }
+                    options.body = jsonInput;
                 }
 
                 fetch(route, options)

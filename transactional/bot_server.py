@@ -315,8 +315,15 @@ class BotServer:
     def modify_target(self, target, instance_id):
         """Modify target for an instance"""
         try:
-            self.redis_store.set_param("target_mtm", target, instance_id)
-            return True
+            ## Find the key which has the instance_id
+            ## get all keys from redis
+            keys = self.redis_store.get_keys()
+            for key in keys:
+                if instance_id in key:
+                    cache_key = key
+                    self.redis_store.set_param("target_mtm", target, cache_key)
+                    return True
+            return False
         except Exception as e:  ## pylint: disable=broad-exception-caught
             self.logger.error("Failed to modify target %s", e)
             return False
