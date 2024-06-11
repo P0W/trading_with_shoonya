@@ -223,6 +223,7 @@
                 if (method === 'POST') {
                     let jsonInput = document.getElementById(`json-input-${route}`).value;
                     options.body = jsonInput;
+                    options.headers['Content-Type'] = 'application/json';
                 }
 
                 fetch(route, options)
