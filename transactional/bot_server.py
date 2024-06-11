@@ -115,7 +115,8 @@ class BotServer:
         """Get log file for today"""
         today = datetime.datetime.now().strftime("%Y%m%d")
         file_name = None
-        for log_file in os.listdir("logs"):
+        logs_directory = "logs"
+        for log_file in os.listdir(logs_directory):
             if (
                 today in log_file
                 and log_file.startswith("shoonya_transaction")
@@ -124,7 +125,7 @@ class BotServer:
                 file_name = log_file
                 break
             self.logger.debug("Log file found: %s", file_name)
-        return file_name
+        return os.path.join(logs_directory, file_name)
 
     def get_errors(self):
         """Get errors from the log file"""
@@ -274,17 +275,22 @@ class BotServer:
                 with open(file_name, "r", encoding="utf-8") as f:
                     # Check if the file has been updated
                     new_size = os.path.getsize(file_name)
+                    self.logger.debug("New size: %d", new_size)
                     if new_size > file_size:
                         f.seek(file_size)
                         log_data = f.read()
                         file_size = new_size
                         # Each line must be prefixed with "data: " and followed by two newlines
                         for line in log_data.splitlines():
+                            self.logger.debug("Sending: %s", line)
                             yield f"data: {line}\n\n"
                     time.sleep(1)  # Sleep for a bit before checking for new logs
         except GeneratorExit:
             # Handle client disconnection
             self.logger.info("Client disconnected, stopping log stream.")
+        except Exception as e:
+            self.logger.error("Error streaming logs: %s", e)
+            yield f"data: Error streaming logs: {e}\n\n"
 
     def modify_target(self, target, instance_id):
         """Modify target for an instance"""
@@ -300,7 +306,9 @@ class BotServer:
 parser = argparse.ArgumentParser(description="Shoonya Bot server")
 
 # Add an argument for instance_id
-parser.add_argument('--instance_id', type=str, help="Instance ID for the bot server", default=None)
+parser.add_argument(
+    "--instance_id", type=str, help="Instance ID for the bot server", default=None
+)
 
 args = parser.parse_args()
 
@@ -477,7 +485,7 @@ def modify_target():
 
 # stream logs
 @app.route("/api/v1/shoonya/logs", methods=["GET"])
-@jwt_required()
+@jwt_required(True)
 def stream_logs():
     """Stream logs."""
     file_name = bot_server.get_log_file()
