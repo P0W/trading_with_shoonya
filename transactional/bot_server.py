@@ -1,10 +1,11 @@
 """Bot Server class to get PnL, VM stats and kill bot instances"""
-
 import datetime
 import logging
 import os
+import platform
 import signal
 import sys
+import time
 from contextlib import contextmanager
 from typing import Dict
 from typing import Tuple
@@ -17,6 +18,8 @@ from flask import Flask
 from flask import jsonify
 from flask import render_template
 from flask import request
+from flask import Response
+from flask import stream_with_context
 from flask_jwt_extended import create_access_token
 from flask_jwt_extended import jwt_required
 from flask_jwt_extended import JWTManager
@@ -30,7 +33,7 @@ with open("cred.yml", "r", encoding="utf-8") as yml_file:
     yml_config = yaml.safe_load(yml_file)
 
 app = Flask(__name__)
-app.config["JWT_SECRET_KEY"] = f"shoonya_{os.urandom(16)}"
+app.config["JWT_SECRET_KEY"] = f"shoonya_bot_{yml_config['apikey']}"
 jwt = JWTManager(app)
 
 users = {
@@ -45,8 +48,7 @@ class BotServer:
     def __init__(self, config: dict):
         self.logger = logging.getLogger(__name__)
         self.pids = []
-        self.instances = []
-        self.update_pids()
+        self.instances = self.update_pids()
         self.redis_store = DataStore()
         if self.pids:
             self.instances = [f"shoonya_{pid}" for pid in self.pids]
@@ -103,15 +105,12 @@ class BotServer:
         self.pids = self._get_pids_of_process(process_name)
         if self.pids:
             self.instances = [f"shoonya_{pid}" for pid in self.pids]
-            return True
-        return False
+            return self.instances
+        return None
 
-    def get_errors(self):
-        """Get errors from the log file"""
+    def get_log_file(self):
+        """Get log file for today"""
         today = datetime.datetime.now().strftime("%Y%m%d")
-        file_name = None
-
-        ## find the log file which ends with today's date and starts with "shoonya_transaction"
         for file in os.listdir("logs"):
             if (
                 file.endswith(today)
@@ -120,6 +119,11 @@ class BotServer:
             ):
                 file_name = file
                 break
+        return file_name
+
+    def get_errors(self):
+        """Get errors from the log file"""
+        file_name = self.get_log_file()
         if file_name:
             with open(file_name, "r", encoding="utf-8") as f:
                 logs = f.read()
@@ -214,16 +218,67 @@ class BotServer:
             return False
 
     def vm_stats(self):
-        """Get VM stats"""
+        """Get VM stats in an OS-independent and optimized manner.
+
+        Returns:
+            dict: A dictionary containing various VM statistics such as CPU,
+                  memory, disk usage, load average (if applicable),
+                  swap memory, network I/O statistics, and system boot time.
+        """
         vm_stats = {}
-        vm_stats["cpu"] = psutil.cpu_percent()
-        vm_stats["memory"] = psutil.virtual_memory().percent
-        # get disk usage
-        disk_usage = psutil.disk_usage("/")
-        vm_stats["disk"] = disk_usage.percent
-        ## get load average
-        vm_stats["load_avg"] = psutil.cpu_percent(interval=1, percpu=True)
+        try:
+            # CPU and memory usage
+            vm_stats["cpu"] = psutil.cpu_percent()
+            vm_stats["memory"] = psutil.virtual_memory().percent
+
+            # Disk usage
+            disk_usage = psutil.disk_usage("/")
+            vm_stats["disk"] = disk_usage.percent
+
+            # Load average (if applicable)
+            if (
+                platform.system() != "Windows"
+            ):  # Load average is not available on Windows
+                vm_stats["load_avg"] = os.getloadavg()  ## pylint: disable=no-member
+            else:
+                vm_stats["load_avg"] = "N/A"  # Placeholder for unsupported OS
+
+            # Swap memory
+            swap_memory = psutil.swap_memory()
+            vm_stats["swap"] = swap_memory.percent
+
+            # Network I/O statistics
+            net_io = psutil.net_io_counters()
+            vm_stats["net_sent"] = net_io.bytes_sent
+            vm_stats["net_recv"] = net_io.bytes_recv
+
+            # System boot time
+            boot_time = datetime.datetime.fromtimestamp(psutil.boot_time())
+            vm_stats["boot_time"] = boot_time.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception as e:  ## pylint: disable=broad-exception-caught
+            logging.error("Failed to gather system statistics: %s", e)
+
         return vm_stats
+
+    def stream_logs(self, file_name):
+        """A generator function to stream logs."""
+        try:
+            file_size = os.path.getsize(file_name)
+            while True:
+                with open(file_name, "r", encoding="utf-8") as f:
+                    # Check if the file has been updated
+                    new_size = os.path.getsize(file_name)
+                    if new_size > file_size:
+                        f.seek(file_size)
+                        log_data = f.read()
+                        file_size = new_size
+                        yield log_data
+                    else:
+                        yield ""
+                time.sleep(1)  # Sleep for a bit before checking for new logs
+        except GeneratorExit:
+            # Handle client disconnection
+            self.logger.info("Client disconnected, stopping log stream.")
 
     def modify_target(self, target, instance_id):
         """Modify target for an instance"""
@@ -274,6 +329,11 @@ def home():
             "method": "POST",
             "description": "Modify target for an instance",
         },
+        {
+            "route": "/api/v1/shoonya/logs",
+            "method": "GET",
+            "description": "Stream logs"
+        }
     ]
     return render_template("index.html", endpoints=endpoints)
 
@@ -313,32 +373,50 @@ def get_errors():
     return jsonify(bot_server.get_errors()), 200
 
 
+def validate_parameters(data, required_params, param_types):
+    """Validate required parameters and their types in the provided data."""
+    if not data:
+        raise ValueError("Missing data")
+
+    for param in required_params:
+        if param not in data:
+            raise ValueError(f"Missing {param}")
+        if not isinstance(data[param], param_types[param]):
+            expected_type_name = param_types[param].__name__
+            raise ValueError(f"Invalid {param}, must be a {expected_type_name}")
+
+
 @app.route("/api/v1/shoonya/kill", methods=["POST"])
 @jwt_required()
 def kill_bot():
-    """Kill all instances"""
-    ## Get instance_id from request body
+    """Kill all instances or a specific instance based on the instance_id."""
     try:
-        data = request.get_json()
-        if not data:
-            if bot_server.kill_bot():
-                return jsonify({"message": "All instances killed"}), 200
-            return jsonify({"message": "Failed to kill all instances"}), 200
+        data = request.get_json() or {}
+        required_params = []
+        param_types = {"instance_id": str}
+
+        validate_parameters(data, required_params, param_types)
 
         instance_id = data.get("instance_id")
-        if bot_server.kill_bot(instance_id):
-            return jsonify({"message": "Instance killed"}), 200
-        return jsonify({"message": "Failed to kill instance"}), 200
+        if instance_id:
+            if bot_server.kill_bot(instance_id):
+                return jsonify({"message": "Instance killed"}), 200
+            return jsonify({"message": "Failed to kill instance"}), 200
+        if bot_server.kill_bot():
+            return jsonify({"message": "All instances killed"}), 200
+        return jsonify({"message": "Failed to kill all instances"}), 200
     except Exception as e:  ## pylint: disable=broad-exception-caught
-        return jsonify({"message": f"Failed to kill instances {e}"}), 200
+        return jsonify({"message": f"Failed to kill instances: {e}"}), 500
 
 
 @app.route("/api/v1/shoonya/refresh", methods=["GET"])
 @jwt_required()
 def refresh_pid():
     """Refresh pids"""
-    if bot_server.update_pids():
-        return jsonify({"message": "Pids updated"}), 200
+    instances = bot_server.update_pids()
+    if instances:
+        ## return instances
+        return jsonify({"instances": instances}), 200
     return jsonify({"message": "No instances running"}), 200
 
 
@@ -346,18 +424,42 @@ def refresh_pid():
 @jwt_required()
 def modify_target():
     """Modify target for an instance"""
-    ## Request body should have target
     try:
         data = request.get_json()
-        target = data.get("target")
+        required_params = ["target", "instance_id"]
+        param_types = {"target": float, "instance_id": str}
+
+        # Validate parameters
+        validate_parameters(data, required_params, param_types)
+
+        # Convert target to float after validation
+        target = float(data.get("target"))
         instance_id = data.get("instance_id")
-        if not target:
-            return jsonify({"msg": "Missing target"}), 400
+
         if bot_server.modify_target(target, instance_id):
             return jsonify({"message": "Target modified"}), 200
-        return jsonify({"message": "Failed to modify target"}), 200
+        return jsonify({"message": "Failed to modify target"}), 400
+    except ValueError as e:
+        return jsonify({"message": str(e)}), 400
     except Exception as e:  ## pylint: disable=broad-exception-caught
-        return jsonify({"message": f"Failed to modify target {e}"}), 200
+        return jsonify({"message": f"Failed to modify target: {e}"}), 500
+
+
+# stream logs
+@app.route("/api/v1/shoonya/logs", methods=["GET"])
+@jwt_required()
+def stream_logs():
+    """Stream logs."""
+    file_name = bot_server.get_log_file()
+    if not file_name:
+        return jsonify({"message": "No log file found"}), 404
+    return (
+        Response(
+            stream_with_context(bot_server.stream_logs(file_name)),
+            content_type="text/event-stream",
+        ),
+        200,
+    )
 
 
 if __name__ == "__main__":

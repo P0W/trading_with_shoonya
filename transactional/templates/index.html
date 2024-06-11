@@ -2,7 +2,7 @@
 <html>
 
 <head>
-    <title>API Endpoints</title>
+    <title>Shoonya Bot</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -44,6 +44,19 @@
             background-color: #45a049;
         }
 
+        .content-container {
+            max-width: 90%;
+            /* Adjust this value as needed */
+            margin: 20px auto;
+            /* Adds top and bottom margin, auto centers horizontally */
+            padding: 10px;
+            /* Optional: adds some space inside the container */
+            border: 1px solid #ddd;
+            /* Optional: adds a border around the container */
+            border-radius: 5px;
+            /* Optional: rounds the corners of the container */
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
@@ -53,6 +66,8 @@
         td {
             border: 1px solid #ddd;
             padding: 8px;
+            text-align: left;
+            /* Aligns text to the left */
         }
 
         th {
@@ -115,37 +130,39 @@
         <input type="password" id="password" name="password">
         <input type="submit" value="Sign In">
     </form>
-    <table>
-        <tr>
-            <th>Endpoint</th>
-            <th>Method</th>
-            <th>Description</th>
-            <th>Action</th>
-        </tr>
-        {% for endpoint in endpoints %}
-        <tr>
-            <td>{{ endpoint.route }}</td>
-            <td>{{ endpoint.method }}</td>
-            <td>{{ endpoint.description }}</td>
-            <td>
-                {% if endpoint.method == 'POST' %}
-                <div class="json-input">
-                    <label for="json-input-{{ endpoint.route }}">JSON Input:</label>
-                    <textarea id="json-input-{{ endpoint.route }}" name="json-input-{{ endpoint.route }}" rows="2"
-                        cols="30">
+    <div class="content-container">
+        <table>
+            <tr>
+                <th>Endpoint</th>
+                <th>Method</th>
+                <th>Description</th>
+                <th>Action</th>
+            </tr>
+            {% for endpoint in endpoints %}
+            <tr>
+                <td>{{ endpoint.route }}</td>
+                <td>{{ endpoint.method }}</td>
+                <td>{{ endpoint.description }}</td>
+                <td>
+                    {% if endpoint.method == 'POST' %}
+                    <div class="json-input">
+                        <label for="json-input-{{ endpoint.route }}">JSON Input:</label>
+                        <textarea id="json-input-{{ endpoint.route }}" name="json-input-{{ endpoint.route }}" rows="2"
+                            cols="30">
                         {"instance_id":1234, "target":4242.42}
                     </textarea>
-                </div>
-                {% endif %}
-                <button class="call-button"
-                    onclick="callEndpoint('{{ endpoint.route }}', '{{ endpoint.method }}')">Call</button>
-            </td>
-        </tr>
-        {% endfor %}
-    </table>
-    <p id="loading" style="display: none;">Loading...</p>
-    <h2>Output:</h2>
-    <textarea id="output"></textarea>
+                    </div>
+                    {% endif %}
+                    <button class="call-button"
+                        onclick="callEndpoint('{{ endpoint.route }}', '{{ endpoint.method }}')">Call</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+        <p id="loading" style="display: none;">Loading...</p>
+        <h2>Output:</h2>
+        <textarea id="output"></textarea>
+    </div>
     <script>
         let jwtToken = '';
         function clearOutput() {
@@ -184,44 +201,51 @@
         }
 
         function callEndpoint(route, method = 'GET') {
-            // Show the loading indicator
-            document.getElementById('loading').style.display = 'block';
-            // Clear the output
-            clearOutput();
+            // Check if the route is for logs
+            if (route === '/api/v1/shoonya/logs') {
+                // Open a new tab with the log streaming page
+                const logStreamUrl = 'logStream.html'; // URL of the log streaming page
+                window.open(logStreamUrl, '_blank');
+            } else {
+                // Show the loading indicator
+                document.getElementById('loading').style.display = 'block';
+                // Clear the output
+                clearOutput();
 
-            let options = {
-                method: method,
-                headers: {
-                    'Authorization': `Bearer ${jwtToken}`
-                }
-            };
+                let options = {
+                    method: method,
+                    headers: {
+                        'Authorization': `Bearer ${jwtToken}`
+                    }
+                };
 
-            // If method is POST, get JSON input and add to request body
-            if (method === 'POST') {
-                let jsonInput = document.getElementById(`json-input-${route}`).value;
-                try {
-                    options.body = JSON.parse(jsonInput);
-                    options.headers['Content-Type'] = 'application/json';
-                } catch (e) {
-                    console.error('Error parsing JSON input:', e);
-                    return;
+                // If method is POST, get JSON input and add to request body
+                if (method === 'POST') {
+                    let jsonInput = document.getElementById(`json-input-${route}`).value;
+                    try {
+                        options.body = JSON.parse(jsonInput);
+                        options.headers['Content-Type'] = 'application/json';
+                    } catch (e) {
+                        console.error('Error parsing JSON input:', e);
+                        return;
+                    }
                 }
+
+                fetch(route, options)
+                    .then(response => response.json())
+                    .then(data => {
+                        document.getElementById('output').value = JSON.stringify(data, null, 2);
+
+                        // Hide the loading indicator
+                        document.getElementById('loading').style.display = 'none';
+                    })
+                    .catch((error) => {
+                        console.error('Error:', error);
+
+                        // Hide the loading indicator
+                        document.getElementById('loading').style.display = 'none';
+                    });
             }
-
-            fetch(route, options)
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('output').value = JSON.stringify(data, null, 2);
-
-                    // Hide the loading indicator
-                    document.getElementById('loading').style.display = 'none';
-                })
-                .catch((error) => {
-                    console.error('Error:', error);
-
-                    // Hide the loading indicator
-                    document.getElementById('loading').style.display = 'none';
-                });
         }
     </script>
 </body>
