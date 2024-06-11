@@ -1,4 +1,5 @@
 """Bot Server class to get PnL, VM stats and kill bot instances"""
+
 import datetime
 import logging
 import os
@@ -14,6 +15,7 @@ import psutil
 import psycopg2.extras
 import yaml
 from data_store import DataStore
+from flask import abort
 from flask import Flask
 from flask import jsonify
 from flask import render_template
@@ -295,6 +297,21 @@ bot_server = BotServer(
 )
 
 
+@app.route("/shoonya/<path:filename>")
+def dynamic_html(filename):
+    """Dynamically serve HTML files."""
+    # Ensure the file requested is an HTML file
+    if not filename.endswith(".html"):
+        abort(404)  # Not Found
+
+    try:
+        # Attempt to render the template, assuming it exists in the 'templates' directory
+        return render_template(filename)
+    except Exception: ## pylint: disable=broad-exception-caught
+        # Log the error or handle it as needed
+        abort(404)  # Not Found if the template does not exist
+
+
 @app.route("/shoonya/", methods=["GET"])
 def home():
     """Home page"""
@@ -332,8 +349,8 @@ def home():
         {
             "route": "/api/v1/shoonya/logs",
             "method": "GET",
-            "description": "Stream logs"
-        }
+            "description": "Stream logs",
+        },
     ]
     return render_template("index.html", endpoints=endpoints)
 
