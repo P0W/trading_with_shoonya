@@ -270,43 +270,45 @@ class BotServer:
         """A generator function to stream logs in chunks."""
         try:
             with open(file_name, "r", encoding="utf-8") as f:
-                f.seek(0, os.SEEK_END)  # Move the file pointer to the end of the file
+                f.seek(0, os.SEEK_SET)  # Start reading from the beginning of the file
                 file_size = os.path.getsize(file_name)
                 self.logger.debug(
                     "Streaming logs from %s size %d", file_name, file_size
                 )
-                no_update_count = 0
-                max_no_update_count = (
-                    30  # Stop after 30 consecutive checks with no update
-                )
 
-                while no_update_count < max_no_update_count:
+                # Read and yield the entire file initially
+                while True:
+                    chunk = f.read(1024)
+                    if not chunk:
+                        break
+                    for line in chunk.splitlines():
+                        self.logger.debug("Sending: %s", line)
+                        yield f"data: {line}\n\n"
+                last_known_size = file_size
+
+                # Continuously check for new logs
+                while True:
                     new_size = os.path.getsize(file_name)
                     self.logger.debug("New size: %d", new_size)
-                    if new_size > file_size:
-                        f.seek(file_size)
+                    if new_size > last_known_size:
+                        f.seek(last_known_size)
                         while True:
-                            chunk = f.read(1024)  # Read in 1024-byte chunks
+                            chunk = f.read(1024)
                             if not chunk:
-                                break  # Break if no more data to read
-                            # Process and yield each line in the chunk
+                                break
                             for line in chunk.splitlines():
                                 self.logger.debug("Sending: %s", line)
                                 yield f"data: {line}\n\n"
-                        file_size = new_size
-                        no_update_count = 0  # Reset the counter since we got new data
-                    else:
-                        no_update_count += 1
+                        last_known_size = new_size
+                    elif new_size == last_known_size:
+                        # File has not changed, send an empty comment to keep the connection alive
+                        yield ":\n\n"
                     time.sleep(1)  # Sleep for a bit before checking for new logs
 
-                self.logger.info(
-                    "No updates detected for a while, stopping the log stream."
-                )
-                yield "data: End of log file\n\n"
         except GeneratorExit:
             # Handle client disconnection
             self.logger.info("Client disconnected, stopping log stream.")
-        except Exception as e:  ## pylint: disable=broad-exception-caught
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.logger.error("Error streaming logs: %s", e)
             yield f"data: Error streaming logs: {e}\n\n"
 
