@@ -113,14 +113,16 @@ class BotServer:
     def get_log_file(self):
         """Get log file for today"""
         today = datetime.datetime.now().strftime("%Y%m%d")
-        for file in os.listdir("logs"):
+        file_name = None
+        for log_file in os.listdir("logs"):
             if (
-                file.endswith(today)
-                and file.startswith("shoonya_transaction")
-                and "log" in file
+                today in log_file
+                and log_file.startswith("shoonya_transaction")
+                and "log" in log_file
             ):
-                file_name = file
+                file_name = log_file
                 break
+            self.logger.debug("Log file found: %s", file_name)
         return file_name
 
     def get_errors(self):
@@ -266,6 +268,7 @@ class BotServer:
         """A generator function to stream logs."""
         try:
             file_size = os.path.getsize(file_name)
+            self.logger.debug("Streaming logs from %s size %d", file_name, file_size)
             while True:
                 with open(file_name, "r", encoding="utf-8") as f:
                     # Check if the file has been updated
@@ -274,10 +277,10 @@ class BotServer:
                         f.seek(file_size)
                         log_data = f.read()
                         file_size = new_size
-                        yield log_data
-                    else:
-                        yield ""
-                time.sleep(1)  # Sleep for a bit before checking for new logs
+                        # Each line must be prefixed with "data: " and followed by two newlines
+                        for line in log_data.splitlines():
+                            yield f"data: {line}\n\n"
+                    time.sleep(1)  # Sleep for a bit before checking for new logs
         except GeneratorExit:
             # Handle client disconnection
             self.logger.info("Client disconnected, stopping log stream.")
@@ -307,7 +310,7 @@ def dynamic_html(filename):
     try:
         # Attempt to render the template, assuming it exists in the 'templates' directory
         return render_template(filename)
-    except Exception: ## pylint: disable=broad-exception-caught
+    except Exception:  ## pylint: disable=broad-exception-caught
         # Log the error or handle it as needed
         abort(404)  # Not Found if the template does not exist
 
@@ -480,4 +483,9 @@ def stream_logs():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(levelname)s | %(asctime)s | %(pathname)s:%(lineno)d | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     app.run(host="0.0.0.0", port=5000)

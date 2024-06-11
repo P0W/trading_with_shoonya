@@ -203,8 +203,8 @@
         function callEndpoint(route, method = 'GET') {
             // Check if the route is for logs
             if (route === '/api/v1/shoonya/logs') {
-                // Open a new tab with the log streaming page
-                const logStreamUrl = 'logStream.html'; // URL of the log streaming page
+                // Open a new tab with the log streaming page with jwtToken as a query parameter
+                const logStreamUrl = `logStream.html?token=${encodeURIComponent(jwtToken)}`;
                 window.open(logStreamUrl, '_blank');
             } else {
                 // Show the loading indicator

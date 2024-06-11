@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -40,7 +39,6 @@
         }
     </style>
 </head>
-
 <body>
     <div class="container">
         <h1>Live Log Stream</h1>
@@ -63,10 +61,14 @@
             logDiv.scrollTop = logDiv.scrollHeight; // Auto-scroll to the bottom
         };
 
+        eventSource.onerror = function (event) {
+            console.error('EventSource failed:', event);
+            eventSource.close();
+        };
+
         window.onbeforeunload = function () {
             eventSource.close();
         };
     </script>
 </body>
-
 </html>
