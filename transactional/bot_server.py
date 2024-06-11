@@ -300,13 +300,7 @@ class BotServer:
 parser = argparse.ArgumentParser(description="Shoonya Bot server")
 
 # Add an argument for instance_id
-parser.add_argument(
-    "instance_id",
-    type=str,
-    required=False,
-    help="Instance ID for the bot server",
-    default=None,
-)
+parser.add_argument('--instance_id', type=str, help="Instance ID for the bot server", default=None)
 
 args = parser.parse_args()
 
