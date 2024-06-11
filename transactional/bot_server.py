@@ -267,7 +267,7 @@ class BotServer:
         return vm_stats
 
     def stream_logs(self, file_name):
-        """A generator function to stream logs."""
+        """A generator function to stream logs in chunks."""
         try:
             with open(file_name, "r", encoding="utf-8") as f:
                 f.seek(0, os.SEEK_END)  # Move the file pointer to the end of the file
@@ -277,7 +277,7 @@ class BotServer:
                 )
                 no_update_count = 0
                 max_no_update_count = (
-                    5  # Stop after 5 consecutive checks with no update
+                    30  # Stop after 30 consecutive checks with no update
                 )
 
                 while no_update_count < max_no_update_count:
@@ -285,12 +285,15 @@ class BotServer:
                     self.logger.debug("New size: %d", new_size)
                     if new_size > file_size:
                         f.seek(file_size)
-                        log_data = f.read(new_size - file_size)
+                        while True:
+                            chunk = f.read(1024)  # Read in 1024-byte chunks
+                            if not chunk:
+                                break  # Break if no more data to read
+                            # Process and yield each line in the chunk
+                            for line in chunk.splitlines():
+                                self.logger.debug("Sending: %s", line)
+                                yield f"data: {line}\n\n"
                         file_size = new_size
-                        # Each line must be prefixed with "data: " and followed by two newlines
-                        for line in log_data.splitlines():
-                            self.logger.debug("Sending: %s", line)
-                            yield f"data: {line}\n\n"
                         no_update_count = 0  # Reset the counter since we got new data
                     else:
                         no_update_count += 1
