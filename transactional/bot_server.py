@@ -269,26 +269,41 @@ class BotServer:
     def stream_logs(self, file_name):
         """A generator function to stream logs."""
         try:
-            file_size = os.path.getsize(file_name)
-            self.logger.debug("Streaming logs from %s size %d", file_name, file_size)
-            while True:
-                with open(file_name, "r", encoding="utf-8") as f:
-                    # Check if the file has been updated
+            with open(file_name, "r", encoding="utf-8") as f:
+                f.seek(0, os.SEEK_END)  # Move the file pointer to the end of the file
+                file_size = os.path.getsize(file_name)
+                self.logger.debug(
+                    "Streaming logs from %s size %d", file_name, file_size
+                )
+                no_update_count = 0
+                max_no_update_count = (
+                    5  # Stop after 5 consecutive checks with no update
+                )
+
+                while no_update_count < max_no_update_count:
                     new_size = os.path.getsize(file_name)
                     self.logger.debug("New size: %d", new_size)
                     if new_size > file_size:
                         f.seek(file_size)
-                        log_data = f.read()
+                        log_data = f.read(new_size - file_size)
                         file_size = new_size
                         # Each line must be prefixed with "data: " and followed by two newlines
                         for line in log_data.splitlines():
                             self.logger.debug("Sending: %s", line)
                             yield f"data: {line}\n\n"
+                        no_update_count = 0  # Reset the counter since we got new data
+                    else:
+                        no_update_count += 1
                     time.sleep(1)  # Sleep for a bit before checking for new logs
+
+                self.logger.info(
+                    "No updates detected for a while, stopping the log stream."
+                )
+                yield "data: End of log file\n\n"
         except GeneratorExit:
             # Handle client disconnection
             self.logger.info("Client disconnected, stopping log stream.")
-        except Exception as e:
+        except Exception as e:  ## pylint: disable=broad-exception-caught
             self.logger.error("Error streaming logs: %s", e)
             yield f"data: Error streaming logs: {e}\n\n"
 
