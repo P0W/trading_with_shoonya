@@ -1,5 +1,6 @@
 """Bot Server class to get PnL, VM stats and kill bot instances"""
 
+import argparse
 import datetime
 import logging
 import os
@@ -47,10 +48,10 @@ users = {
 class BotServer:
     """Bot Server class to get PnL, VM stats and kill bot instances"""
 
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, instance_id: list = None):
         self.logger = logging.getLogger(__name__)
         self.pids = []
-        self.instances = self.update_pids()
+        self.instances = instance_id or self.update_pids()
         self.redis_store = DataStore()
         if self.pids:
             self.instances = [f"shoonya_{pid}" for pid in self.pids]
@@ -295,8 +296,23 @@ class BotServer:
             return False
 
 
+# Create the parser
+parser = argparse.ArgumentParser(description="Shoonya Bot server")
+
+# Add an argument for instance_id
+parser.add_argument(
+    "instance_id",
+    type=str,
+    required=False,
+    help="Instance ID for the bot server",
+    default=None,
+)
+
+args = parser.parse_args()
+
 bot_server = BotServer(
-    {"user": "admin", "password": "admin", "port": 6000, "dbname": "shoonya"}
+    {"user": "admin", "password": "admin", "port": 6000, "dbname": "shoonya"},
+    args.instance_id,
 )
 
 
