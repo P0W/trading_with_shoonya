@@ -153,7 +153,7 @@
                     </textarea>
                     </div>
                     {% endif %}
-                    <button class="call-button"
+                    <button id="callButton" class="call-button"
                         onclick="callEndpoint('{{ endpoint.route }}', '{{ endpoint.method }}')">Call</button>
                 </td>
             </tr>
@@ -167,6 +167,14 @@
         let jwtToken = '';
         function clearOutput() {
             document.getElementById('output').value = '';
+        }
+        function enableCallButtonIfTokenReceived() {
+            const callButton = document.getElementById('callButton');
+            if (jwtToken) {
+                callButton.disabled = false;
+            } else {
+                callButton.disabled = true;
+            }
         }
         function signIn() {
             const username = document.getElementById('username').value;
@@ -186,9 +194,14 @@
             })
                 .then(response => response.json())
                 .then(data => {
-                    jwtToken = data.access_token;
-                    document.getElementById('output').value = 'Signed in successfully';
-
+                    // if data is not {"message": "Missing username or password"}
+                    if (data.access_token) {
+                        jwtToken = data.access_token;
+                        document.getElementById('output').value = 'Signed in successfully';
+                        enableCallButtonIfTokenReceived();
+                    } else {
+                        document.getElementById('output').value = data.message;
+                    }
                     // Hide the loading indicator
                     document.getElementById('loading').style.display = 'none';
                 })
@@ -242,6 +255,7 @@
                     });
             }
         }
+        enableCallButtonIfTokenReceived();
     </script>
 </body>
 

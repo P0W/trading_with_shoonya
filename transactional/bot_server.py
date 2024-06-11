@@ -317,10 +317,12 @@ class BotServer:
         try:
             ## Find the key which has the instance_id
             ## get all keys from redis
-            keys = self.redis_store.get_keys()
+            keys = self.redis_store.get_keys(instance_id)
             for key in keys:
                 if instance_id in key:
                     cache_key = key
+                    ## strip the target_mtm from the key
+                    cache_key = cache_key.replace("_target_mtm", "")
                     self.redis_store.set_param("target_mtm", target, cache_key)
                     return True
             return False
@@ -410,11 +412,11 @@ def signin():
     username = data.get("username")
     password = data.get("password")
     if not username or not password:
-        return jsonify({"msg": "Missing username or password"}), 400
+        return jsonify({"message": "Missing username or password"}), 400
     if username in users and check_password_hash(users[username], password):
         access_token = create_access_token(identity=username)
         return jsonify(access_token=access_token), 200
-    return jsonify({"msg": "Bad username or password"}), 401
+    return jsonify({"message": "Bad username or password"}), 401
 
 
 @app.route("/api/v1/shoonya/pnl", methods=["GET"])
