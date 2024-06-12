@@ -14,3 +14,5 @@ tqdm
 flask
 flask-jwt-extended
 psutil
+gunicorn
+gevent

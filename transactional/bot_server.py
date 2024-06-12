@@ -1,6 +1,5 @@
 """Bot Server class to get PnL, VM stats and kill bot instances"""
 
-import argparse
 import datetime
 import logging
 import os
@@ -23,6 +22,7 @@ from flask import render_template
 from flask import request
 from flask import Response
 from flask import stream_with_context
+from flask.cli import load_dotenv
 from flask_jwt_extended import create_access_token
 from flask_jwt_extended import jwt_required
 from flask_jwt_extended import JWTManager
@@ -51,7 +51,7 @@ class BotServer:
     def __init__(self, config: dict, instance_id: list = None):
         self.logger = logging.getLogger(__name__)
         self.pids = []
-        self.instances = instance_id or self.update_pids()
+        self.instances = self.update_pids(instance_id)
         self.redis_store = DataStore()
         if self.pids:
             self.instances = [f"shoonya_{pid}" for pid in self.pids]
@@ -102,10 +102,10 @@ class BotServer:
                 pass
         return pids
 
-    def update_pids(self):
+    def update_pids(self, instance_id=None):
         """Update pids of the process"""
         process_name = "shoonya_transaction.py"
-        self.pids = self._get_pids_of_process(process_name)
+        self.pids = [instance_id] or self._get_pids_of_process(process_name)
         if self.pids:
             self.instances = [f"shoonya_{pid}" for pid in self.pids]
             return self.instances
@@ -331,19 +331,21 @@ class BotServer:
             return False
 
 
-# Create the parser
-parser = argparse.ArgumentParser(description="Shoonya Bot server")
-
-# Add an argument for instance_id
-parser.add_argument(
-    "--instance_id", type=str, help="Instance ID for the bot server", default=None
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(levelname)s | %(asctime)s | %(pathname)s:%(lineno)d | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-args = parser.parse_args()
+# Load environment variables from .env file
+load_dotenv()
+
+test_instance_id = os.getenv("INSTANCE_ID")
+logging.info("Instance ID: %s", test_instance_id)
 
 bot_server = BotServer(
     {"user": "admin", "password": "admin", "port": 6000, "dbname": "shoonya"},
-    args.instance_id,
+    test_instance_id
 )
 
 
@@ -530,9 +532,5 @@ def stream_logs():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(levelname)s | %(asctime)s | %(pathname)s:%(lineno)d | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5000, threaded=True)
+    ## gunicorn -k gevent -w 1 -b 0.0.0.0:5000 bot_server:app
