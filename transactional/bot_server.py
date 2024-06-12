@@ -105,7 +105,10 @@ class BotServer:
     def update_pids(self, instance_id=None):
         """Update pids of the process"""
         process_name = "shoonya_transaction.py"
-        self.pids = [instance_id] or self._get_pids_of_process(process_name)
+        if instance_id:
+            self.pids = [instance_id]
+        else:
+            self.pids = self._get_pids_of_process(process_name)
         if self.pids:
             self.instances = [f"shoonya_{pid}" for pid in self.pids]
             return self.instances
