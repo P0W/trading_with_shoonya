@@ -4,7 +4,7 @@
 
 This project is a trading bot built with Python. It uses the `shoonya_transaction.py` script to place a short straddle, with OTM stop losses and then monitors the live MTM
 
-It works (and tested) with NIFTY, BANKNIFTY, FINNIFTY, SENSEX, BANKEX, MIDCPNIFTY, CRUDEOIL options.
+It works with NIFTY, BANKNIFTY, FINNIFTY, SENSEX, BANKEX, MIDCPNIFTY, CRUDEOIL options.
 
 ## The Strategy
 
