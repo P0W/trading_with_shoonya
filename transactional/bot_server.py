@@ -137,7 +137,8 @@ class BotServer:
             with open(file_name, "r", encoding="utf-8") as f:
                 logs = f.read()
             errors = [line for line in logs.split("\n") if "ERROR" in line]
-            return errors
+            if errors:
+                return {"errors": errors}
         return {"message": "No errors found"}
 
     def _get_pnl(self, instance_id) -> Tuple[float, Dict]:
@@ -269,25 +270,28 @@ class BotServer:
 
         return vm_stats
 
+    ## pylint: disable=too-many-branches
     def stream_logs(self, file_name):
         """A generator function to stream logs in chunks."""
         try:
             with open(file_name, "r", encoding="utf-8") as f:
-                f.seek(0, os.SEEK_SET)  # Start reading from the beginning of the file
+                # Start reading from the beginning of the file
                 file_size = os.path.getsize(file_name)
                 self.logger.debug(
                     "Streaming logs from %s size %d", file_name, file_size
                 )
 
-                # Read and yield the entire file initially
-                while True:
+                # Read the entire existing file initially
+                last_known_size = 0
+                while last_known_size < file_size:
+                    f.seek(last_known_size)
                     chunk = f.read(2048)
                     if not chunk:
                         break
                     for line in chunk.splitlines():
                         self.logger.debug("Sending: %s", line)
                         yield f"data: {line}\n\n"
-                last_known_size = file_size
+                    last_known_size = f.tell()
 
                 # Continuously check for new logs
                 while True:
@@ -295,22 +299,28 @@ class BotServer:
                     if new_size > last_known_size:
                         f.seek(last_known_size)
                         while True:
-                            chunk = f.read(2048)
+                            chunk = f.read(512)
                             if not chunk:
                                 break
                             for line in chunk.splitlines():
                                 self.logger.debug("Sending: %s", line)
                                 yield f"data: {line}\n\n"
                         last_known_size = new_size
-                    elif new_size == last_known_size:
+                    else:
                         # File has not changed, send an empty comment to keep the connection alive
                         yield ":\n\n"
-                    time.sleep(5)  # Sleep for a bit before checking for new logs
+                    time.sleep(0.5)  # Sleep for a bit before checking for new logs
 
         except GeneratorExit:
             # Handle client disconnection
             self.logger.info("Client disconnected, stopping log stream.")
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except FileNotFoundError:
+            self.logger.error("File not found: %s", file_name)
+            yield f"data: Error: File not found: {file_name}\n\n"
+        except IOError as e:
+            self.logger.error("I/O error(%s): %s", e.errno, e.strerror)
+            yield f"data: Error: I/O error({e.errno}): {e.strerror}\n\n"
+        except Exception as e:  ## pylint: disable=broad-exception-caught
             self.logger.error("Error streaming logs: %s", e)
             yield f"data: Error streaming logs: {e}\n\n"
 
@@ -347,7 +357,7 @@ logging.info("Instance ID: %s", test_instance_id)
 
 bot_server = BotServer(
     {"user": "admin", "password": "admin", "port": 6000, "dbname": "shoonya"},
-    test_instance_id
+    test_instance_id,
 )
 
 
