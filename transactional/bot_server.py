@@ -281,17 +281,15 @@ class BotServer:
                     "Streaming logs from %s size %d", file_name, file_size
                 )
 
-                # Read the entire existing file initially
-                last_known_size = 0
-                while last_known_size < file_size:
-                    f.seek(last_known_size)
-                    chunk = f.read(2048)
+                # Read and yield the entire file initially
+                while True:
+                    chunk = f.read(1048)
                     if not chunk:
                         break
                     for line in chunk.splitlines():
                         self.logger.debug("Sending: %s", line)
                         yield f"data: {line}\n\n"
-                    last_known_size = f.tell()
+                last_known_size = file_size
 
                 # Continuously check for new logs
                 while True:
@@ -299,7 +297,7 @@ class BotServer:
                     if new_size > last_known_size:
                         f.seek(last_known_size)
                         while True:
-                            chunk = f.read(512)
+                            chunk = f.read(1048)
                             if not chunk:
                                 break
                             for line in chunk.splitlines():
@@ -309,7 +307,7 @@ class BotServer:
                     else:
                         # File has not changed, send an empty comment to keep the connection alive
                         yield ":\n\n"
-                    time.sleep(0.5)  # Sleep for a bit before checking for new logs
+                    time.sleep(1)  # Sleep for a bit before checking for new logs
 
         except GeneratorExit:
             # Handle client disconnection
