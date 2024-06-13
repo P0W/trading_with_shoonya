@@ -23,8 +23,7 @@
             background-color: #fff;
             border-radius: 8px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            max-width: 90%;
-            width: 600px;
+            max-width: 90vh;
         }
 
         .log {
@@ -78,27 +77,18 @@
     <script>
         const eventSource = new EventSource('/api/v1/shoonya/logs');
         const logDiv = document.getElementById('log');
-        const maxLogMessages = 1000; // Maximum number of log messages to display
 
         eventSource.onmessage = function (event) {
-
             const message = event.data;
             let spanClass = '';
-            if (message.includes("ERROR")) {
+            if (message.startsWith("ERROR")) {
                 spanClass = 'error';
-            } else if (message.includes("INFO")) {
+            } else if (message.startsWith("INFO")) {
                 spanClass = 'info';
-            } else if (message.includes("DEBUG")) {
+            } else if (message.startsWith("DEBUG")) {
                 spanClass = 'debug';
             }
             logDiv.innerHTML += `<span class="${spanClass}">${message}</span><br>`;
-
-            // Check if the number of log messages exceeds the maximum limit
-            const logMessages = logDiv.querySelectorAll('span');
-            if (logMessages.length > maxLogMessages) {
-                // Remove the oldest log message
-                logDiv.removeChild(logMessages[0]);
-            }
             logDiv.scrollTop = logDiv.scrollHeight; // Auto-scroll to the bottom
         };
 
