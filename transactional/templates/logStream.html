@@ -36,7 +36,7 @@
             max-height: 80vh;
             border: 1px solid #e1e1e1;
             margin-top: 20px;
-            font-size: 13px;
+            font-size: 12px;
         }
 
         h1 {
@@ -76,9 +76,11 @@
     </div>
     <script>
         const eventSource = new EventSource('/api/v1/shoonya/logs');
+        const logDiv = document.getElementById('log');
+        const maxLogMessages = 1000; // Maximum number of log messages to display
 
         eventSource.onmessage = function (event) {
-            const logDiv = document.getElementById('log');
+
             const message = event.data;
             let spanClass = '';
             if (message.startsWith("ERROR")) {
@@ -89,6 +91,13 @@
                 spanClass = 'debug';
             }
             logDiv.innerHTML += `<span class="${spanClass}">${message}</span><br>`;
+
+            // Check if the number of log messages exceeds the maximum limit
+            const logMessages = logDiv.querySelectorAll('span');
+            if (logMessages.length > maxLogMessages) {
+                // Remove the oldest log message
+                logDiv.removeChild(logMessages[0]);
+            }
             logDiv.scrollTop = logDiv.scrollHeight; // Auto-scroll to the bottom
         };
 
