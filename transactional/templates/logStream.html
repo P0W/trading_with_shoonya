@@ -24,7 +24,6 @@
             border-radius: 8px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             max-width: 90%;
-            width: 600px;
         }
 
         .log {
@@ -37,10 +36,11 @@
             max-height: 80vh;
             border: 1px solid #e1e1e1;
             margin-top: 20px;
+            font-size: 13px;
         }
 
         h1 {
-            font-size: 24px;
+            font-size: 20px;
             color: #333;
             font-weight: 500;
         }
@@ -81,11 +81,11 @@
             const logDiv = document.getElementById('log');
             const message = event.data;
             let spanClass = '';
-            if (message.includes("ERROR")) {
+            if (message.startsWith("ERROR")) {
                 spanClass = 'error';
-            } else if (message.includes("INFO")) {
+            } else if (message.startsWith("INFO")) {
                 spanClass = 'info';
-            } else if (message.includes("DEBUG")) {
+            } else if (message.startsWith("DEBUG")) {
                 spanClass = 'debug';
             }
             logDiv.innerHTML += `<span class="${spanClass}">${message}</span><br>`;
