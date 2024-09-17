@@ -3,7 +3,7 @@
 # Define the associative array mapping of days to indices and quantities
 declare -A indices
 indices[1]="BANKEX 30"
-indices[2]="FINNIFTY 80"
+indices[2]="FINNIFTY 50"
 indices[3]="BANKNIFTY 30"
 indices[4]="NIFTY 50"
 indices[5]="SENSEX 20"
