@@ -488,6 +488,9 @@ def main(args):
     if target_mtm == -1:
         logging.info("Target MTM not provided, calculating from premium")
         target_mtm = premium * target
+    elif target_mtm != -1 and target != 0.35: ## not equal to default
+        logging.info("Target MTM provided and target provided, using minimum")
+        target_mtm = min(premium * target, target_mtm)
     else:
         logging.info(
             "Target MTM provided, ignoring target %.2f %% of premium", target * 100.0
