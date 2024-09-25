@@ -36,7 +36,7 @@ INDICES_ROUNDING = {
 LOT_SIZE = {
     "NIFTY": 50,
     "BANKNIFTY": 15,
-    "FINNIFTY": 40,
+    "FINNIFTY": 25,
     "SENSEX": 10,
     "BANKEX": 15,
     "MIDCPNIFTY": 75,
