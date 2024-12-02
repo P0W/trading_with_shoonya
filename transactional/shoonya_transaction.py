@@ -179,14 +179,14 @@ class ShoonyaTransaction:
                     self.order_queue.remove(remarks)
 
     @delay_decorator(delay=10)
-    def cancel_on_profit(self, target_profit: float):
+    def cancel_on_profit(self, target_profit: float, target_loss: float):
         """Cancel order using Shoonya API"""
         total_pnl, display_msg = self.transaction_manager.get_pnl()
-        if total_pnl > target_profit:
+        if (total_pnl > target_profit) or (total_pnl <= target_loss) :
             self.logger.info(
-                "Target reached Current Pnl: %.2f | Target: %.2f | Cancelling all pending orders",
+                "Target reached Current Pnl: %.2f | Target: %.2f | Target Loss: %.2f | Cancelling all pending orders",
                 total_pnl,
-                target_profit,
+                target_profit, traget_loss
             )
             self._square_off()
         display_msg["Target"] = round(target_profit, 2)
@@ -589,7 +589,7 @@ def main(args):
                 cancel_remarks=f"{subscribe_msg}_stop_loss",
             )
             shoonya_transaction.cancel_on_profit(
-                target_profit=redis_store.retrieve_param("target_mtm")
+                target_profit=redis_store.retrieve_param("target_mtm"), target_loss=-1.0*target_mtm*1.33 ## Hardcoded
             )  ## Cancel all orders if target is reached
             ## Exit if book profit is reached on each leg
             # shoonya_transaction.exit_on_book_profit()
