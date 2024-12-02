@@ -2,6 +2,7 @@
 This module is used to place orders for straddle strategy using Shoonya API.
 Uses relational database to store orders and their status.
 """
+
 import json
 import logging
 import sys
@@ -182,11 +183,12 @@ class ShoonyaTransaction:
     def cancel_on_profit(self, target_profit: float, target_loss: float):
         """Cancel order using Shoonya API"""
         total_pnl, display_msg = self.transaction_manager.get_pnl()
-        if (total_pnl > target_profit) or (total_pnl <= target_loss) :
+        if (total_pnl > target_profit) or (total_pnl <= target_loss):
             self.logger.info(
                 "Target reached Current Pnl: %.2f | Target: %.2f | Target Loss: %.2f | Cancelling all pending orders",
                 total_pnl,
-                target_profit, traget_loss
+                target_profit,
+                traget_loss,
             )
             self._square_off()
         display_msg["Target"] = round(target_profit, 2)
@@ -488,7 +490,7 @@ def main(args):
     if target_mtm == -1:
         logging.info("Target MTM not provided, calculating from premium")
         target_mtm = premium * target
-    elif target_mtm != -1 and target != 0.35: ## not equal to default
+    elif target_mtm != -1 and target != 0.35:  ## not equal to default
         logging.info("Target MTM provided and target provided, using minimum")
         target_mtm = min(premium * target, target_mtm)
     else:
@@ -589,7 +591,8 @@ def main(args):
                 cancel_remarks=f"{subscribe_msg}_stop_loss",
             )
             shoonya_transaction.cancel_on_profit(
-                target_profit=redis_store.retrieve_param("target_mtm"), target_loss=-1.0*target_mtm*1.33 ## Hardcoded
+                target_profit=redis_store.retrieve_param("target_mtm"),
+                target_loss=-1.0 * target_mtm * 1.33,  ## Hardcoded
             )  ## Cancel all orders if target is reached
             ## Exit if book profit is reached on each leg
             # shoonya_transaction.exit_on_book_profit()
