@@ -9,3 +9,10 @@ redis
 black
 pylint
 colorlog
+tqdm
+numpy
+
+# For NIFTY Spread Strategy
+# ta  # Technical Analysis library - optional, using manual RSI/EMA calculation
+# apscheduler  # Optional: for production-grade scheduling
+# python-telegram-bot  # Optional: for async telegram (using requests instead)
