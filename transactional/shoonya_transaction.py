@@ -188,7 +188,7 @@ class ShoonyaTransaction:
                 "Target reached Current Pnl: %.2f | Target: %.2f | Target Loss: %.2f | Cancelling all pending orders",
                 total_pnl,
                 target_profit,
-                traget_loss,
+                target_loss,
             )
             self._square_off()
         display_msg["Target"] = round(target_profit, 2)
