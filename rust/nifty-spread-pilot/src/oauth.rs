@@ -22,7 +22,6 @@ const MAX_CONFIG_BYTES: u64 = 65_536;
 struct Config {
     user_id: String,
     client_id: String,
-    secret: Zeroizing<String>,
     password: Zeroizing<String>,
     totp_key: Zeroizing<Vec<u8>>,
 }
@@ -116,41 +115,18 @@ fn authenticate(
         &factor,
         LoginKind::Api,
     )?);
+    let portal_secret = portal_secret(agent, endpoints, config, &session)?;
     let code = Zeroizing::new(auth_code(
         agent,
         endpoints.auth_code,
         &config.client_id,
         &session,
     )?);
-    match exchange(agent, endpoints.token, config, &config.secret, &code) {
+    match exchange(agent, endpoints.token, config, &portal_secret, &code) {
         Ok(token) => Ok(token),
         Err(ExchangeError::Other(error)) => Err(error),
         Err(ExchangeError::InvalidVerifier) => {
-            let portal_secret = portal_secret(agent, endpoints, config, &session)?;
-            if portal_secret.as_str() == config.secret.as_str() {
-                return Err(
-                    "Shoonya rejected the verifier although the saved portal key matches .env."
-                        .to_owned(),
-                );
-            }
-            let code = Zeroizing::new(auth_code(
-                agent,
-                endpoints.auth_code,
-                &config.client_id,
-                &session,
-            )?);
-            match exchange(agent, endpoints.token, config, &portal_secret, &code) {
-                Ok(token) => {
-                    eprintln!(
-                        "The saved Shoonya portal Secret Code differs from .env; the portal key was used for this login. Update .env securely."
-                    );
-                    Ok(token)
-                }
-                Err(ExchangeError::InvalidVerifier) => {
-                    Err("Shoonya rejected the verifier using the saved portal key.".to_owned())
-                }
-                Err(ExchangeError::Other(error)) => Err(error),
-            }
+            Err("Shoonya rejected the verifier using the saved portal key.".to_owned())
         }
     }
 }
@@ -175,12 +151,10 @@ fn read_config(path: &Path) -> Result<Config, String> {
             buf
         }
         Err(_) => {
-            // Allow process-env-only configuration when all 5 Shoonya keys are not in a .env file;
-            // preserve the explicit open error if neither process env nor .env supplies credentials.
+            // Allow process-env-only credentials if the configuration file is absent.
             let any_env = [
                 "SHOONYA_USER_ID",
                 "SHOONYA_CLIENT_ID",
-                "SHOONYA_SECRET_CODE",
                 "SHOONYA_PASSWORD",
                 "SHOONYA_TOTP_SECRET",
             ]
@@ -206,7 +180,6 @@ fn parse_config_with_env(
 ) -> Result<Config, String> {
     let mut user_id = None;
     let mut client_id = None;
-    let mut secret = None;
     let mut password = None;
     let mut totp_secret = None;
     for pair in dotenvy::from_read_iter(Cursor::new(content)) {
@@ -216,7 +189,6 @@ fn parse_config_with_env(
         let slot = match key.as_str() {
             "SHOONYA_USER_ID" => &mut user_id,
             "SHOONYA_CLIENT_ID" => &mut client_id,
-            "SHOONYA_SECRET_CODE" => &mut secret,
             "SHOONYA_PASSWORD" => &mut password,
             "SHOONYA_TOTP_SECRET" => &mut totp_secret,
             _ => continue,
@@ -228,7 +200,6 @@ fn parse_config_with_env(
     for (name, slot) in [
         ("SHOONYA_USER_ID", &mut user_id),
         ("SHOONYA_CLIENT_ID", &mut client_id),
-        ("SHOONYA_SECRET_CODE", &mut secret),
         ("SHOONYA_PASSWORD", &mut password),
         ("SHOONYA_TOTP_SECRET", &mut totp_secret),
     ] {
@@ -244,13 +215,6 @@ fn parse_config_with_env(
     if !valid_identifier(&user_id, false) || !valid_identifier(&client_id, true) {
         return Err("Invalid Shoonya user or client ID in .env.".to_owned());
     }
-    let secret = required(secret, "SHOONYA_SECRET_CODE")?;
-    if secret.len() > 1024
-        || !secret.bytes().all(|c| (33..=126).contains(&c) && c != b'*')
-        || secret.as_str() == "your_secret_code"
-    {
-        return Err("Invalid or masked SHOONYA_SECRET_CODE in .env.".to_owned());
-    }
     let password = required(password, "SHOONYA_PASSWORD")?;
     if password.len() > 4096 {
         return Err("Invalid SHOONYA_PASSWORD in .env.".to_owned());
@@ -260,7 +224,6 @@ fn parse_config_with_env(
     Ok(Config {
         user_id: user_id.to_string(),
         client_id: client_id.to_string(),
-        secret,
         password,
         totp_key,
     })
@@ -692,7 +655,7 @@ mod tests {
     }
 
     fn config() -> Config {
-        parse_config(b"SHOONYA_USER_ID=USER1\nSHOONYA_CLIENT_ID=USER1_U\nSHOONYA_SECRET_CODE=secret\nSHOONYA_PASSWORD=password\nSHOONYA_TOTP_SECRET=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ\n").unwrap()
+        parse_config(b"SHOONYA_USER_ID=USER1\nSHOONYA_CLIENT_ID=USER1_U\nSHOONYA_PASSWORD=password\nSHOONYA_TOTP_SECRET=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ\n").unwrap()
     }
 
     #[test]
@@ -713,7 +676,7 @@ mod tests {
     }
 
     #[test]
-    fn config_rejects_missing_duplicate_and_masked_values_without_exposing_them() {
+    fn config_rejects_missing_and_duplicate_values_without_exposing_them() {
         assert!(
             !parse_config(b"SHOONYA_PASSWORD=secret\n")
                 .err()
@@ -721,7 +684,8 @@ mod tests {
                 .contains("secret")
         );
         assert!(parse_config(b"SHOONYA_USER_ID=A\nSHOONYA_USER_ID=B\n").is_err());
-        assert!(parse_config(b"SHOONYA_USER_ID=A\nSHOONYA_CLIENT_ID=A_U\nSHOONYA_SECRET_CODE=***\nSHOONYA_PASSWORD=password\nSHOONYA_TOTP_SECRET=GEZDGNBV\n").is_err());
+        assert!(parse_config(b"SHOONYA_USER_ID=A\nSHOONYA_CLIENT_ID=A_U\nSHOONYA_PASSWORD=password\nSHOONYA_TOTP_SECRET=***\n").is_err());
+        assert!(parse_config(b"SHOONYA_USER_ID=A\nSHOONYA_CLIENT_ID=A_U\nSHOONYA_SECRET_CODE=***\nSHOONYA_PASSWORD=password\nSHOONYA_TOTP_SECRET=GEZDGNBV\n").is_ok());
     }
 
     #[test]
@@ -887,7 +851,7 @@ mod tests {
     }
 
     #[test]
-    fn verifier_recovery_uses_saved_portal_key_and_a_fresh_authorization_code() {
+    fn authentication_uses_portal_key_and_web_fallback() {
         let (quick_url, quick_requests) =
             mock_responses(vec![ok_json(r#"{"stat":"Ok","susertoken":"APITOKEN"}"#)]);
         let (web_url, web_requests) =
@@ -897,11 +861,10 @@ mod tests {
                 .to_owned(),
             ok_json(r#"{"stat":"Ok","app_key":"USER1_U","sec_code":"portal-secret"}"#),
         ]);
-        let (code_url, code_requests) = mock_responses(vec![redirect("c1"), redirect("c2")]);
-        let (token_url, token_requests) = mock_responses(vec![
-            ok_json(r#"{"stat":"Not_Ok","emsg":"INVALID_VERIFIER"}"#),
-            ok_json(r#"{"stat":"Ok","access_token":"FINAL","USERID":"USER1"}"#),
-        ]);
+        let (code_url, code_requests) = mock_responses(vec![redirect("c2")]);
+        let (token_url, token_requests) = mock_responses(vec![ok_json(
+            r#"{"stat":"Ok","access_token":"FINAL","USERID":"USER1"}"#,
+        )]);
         let endpoints = Endpoints {
             quick_auth: &quick_url,
             web_auth: &web_url,
@@ -929,26 +892,51 @@ mod tests {
         let portal = portal_requests.join().unwrap();
         assert!(portal[0].ends_with("&jKey=APITOKEN"));
         assert!(portal[1].ends_with("&jKey=WEBTOKEN"));
-        assert_eq!(code_requests.join().unwrap().len(), 2);
+        assert_eq!(code_requests.join().unwrap().len(), 1);
         let tokens = token_requests.join().unwrap();
-        for (request, code, checksum) in [
-            (
-                &tokens[0],
-                "c1",
-                "d94b98dd0a2139291cf45649a707bcc1e9d78dcf0937aeab0be7d96c01d33ef1",
-            ),
-            (
-                &tokens[1],
-                "c2",
-                "7a485e70ef2738d38740757a44814a20dac831bff65cd5d655775295446a0cf9",
-            ),
-        ] {
-            let body = request.split_once("\r\n\r\n").unwrap().1;
-            let payload: Value =
-                serde_json::from_str(body.strip_prefix("jData=").unwrap()).unwrap();
-            assert_eq!(payload["code"], code);
-            assert_eq!(payload["checksum"], checksum);
-        }
+        assert_eq!(tokens.len(), 1);
+        let body = tokens[0].split_once("\r\n\r\n").unwrap().1;
+        let payload: Value = serde_json::from_str(body.strip_prefix("jData=").unwrap()).unwrap();
+        assert_eq!(payload["code"], "c2");
+        assert_eq!(
+            payload["checksum"],
+            "7a485e70ef2738d38740757a44814a20dac831bff65cd5d655775295446a0cf9"
+        );
+    }
+
+    #[test]
+    fn authentication_ignores_old_env_secret_when_portal_key_is_available() {
+        let config = parse_config(b"SHOONYA_USER_ID=USER1\nSHOONYA_CLIENT_ID=USER1_U\nSHOONYA_SECRET_CODE=stale\nSHOONYA_PASSWORD=password\nSHOONYA_TOTP_SECRET=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ\n").unwrap();
+        let (quick_url, quick_requests) =
+            mock_responses(vec![ok_json(r#"{"stat":"Ok","susertoken":"APITOKEN"}"#)]);
+        let (portal_url, portal_requests) = mock_responses(vec![ok_json(
+            r#"{"stat":"Ok","app_key":"USER1_U","sec_code":"portal-secret"}"#,
+        )]);
+        let (code_url, code_requests) = mock_responses(vec![redirect("c2")]);
+        let (token_url, token_requests) = mock_responses(vec![ok_json(
+            r#"{"stat":"Ok","access_token":"FINAL","USERID":"USER1"}"#,
+        )]);
+        let endpoints = Endpoints {
+            quick_auth: &quick_url,
+            web_auth: "",
+            app_key: &portal_url,
+            auth_code: &code_url,
+            token: &token_url,
+        };
+        assert_eq!(
+            authenticate(&mock_agent(), &endpoints, &config).unwrap(),
+            "FINAL"
+        );
+        quick_requests.join().unwrap();
+        portal_requests.join().unwrap();
+        code_requests.join().unwrap();
+        let tokens = token_requests.join().unwrap();
+        let body = tokens[0].split_once("\r\n\r\n").unwrap().1;
+        let payload: Value = serde_json::from_str(body.strip_prefix("jData=").unwrap()).unwrap();
+        assert_eq!(
+            payload["checksum"],
+            "7a485e70ef2738d38740757a44814a20dac831bff65cd5d655775295446a0cf9"
+        );
     }
 
     #[test]
@@ -972,7 +960,7 @@ mod tests {
             assert!(!error.contains("private-secret"));
         }
 
-        // Verify read_config size/missing guards, login_session error path, and verifier recovery failure arms.
+        // Verify read_config size/missing guards and login_session error paths.
         let missing = std::env::temp_dir().join("nsp-missing-oauth-cfg.env");
         assert!(login_session(&missing).is_err());
 
@@ -988,7 +976,7 @@ mod tests {
         assert!(read_config(&big_path).is_ok());
         let _ = std::fs::remove_file(&big_path);
 
-        // Case A: portal secret matches .env -> still rejected without retrying token exchange!
+        // A rejected portal verifier fails without retrying the token exchange.
         let (q1, qr1) = mock_responses(vec![ok_json(r#"{"stat":"Ok","susertoken":"APITOKEN"}"#)]);
         let (p1, pr1) = mock_responses(vec![ok_json(
             r#"{"stat":"Ok","app_key":"USER1_U","sec_code":"secret"}"#,
@@ -1007,39 +995,30 @@ mod tests {
         assert!(
             authenticate(&mock_agent(), &ep1, &config())
                 .unwrap_err()
-                .contains("matches .env")
+                .contains("saved portal key")
         );
         qr1.join().unwrap();
         pr1.join().unwrap();
         cr1.join().unwrap();
         tr1.join().unwrap();
 
-        // Case B: portal secret differs, but second token exchange also returns INVALID_VERIFIER!
+        // An unavailable portal key fails before requesting an authorization code.
         let (q2, qr2) = mock_responses(vec![ok_json(r#"{"stat":"Ok","susertoken":"APITOKEN"}"#)]);
-        let (p2, pr2) = mock_responses(vec![ok_json(
-            r#"{"stat":"Ok","app_key":"USER1_U","sec_code":"portal-secret"}"#,
-        )]);
-        let (c2, cr2) = mock_responses(vec![redirect("c1"), redirect("c2")]);
-        let (t2, tr2) = mock_responses(vec![
-            ok_json(r#"{"stat":"Not_Ok","emsg":"INVALID_VERIFIER"}"#),
-            ok_json(r#"{"stat":"Not_Ok","emsg":"INVALID_VERIFIER"}"#),
-        ]);
+        let (p2, pr2) = mock_responses(vec![ok_json(r#"{"stat":"Ok","sec_code":""}"#)]);
         let ep2 = Endpoints {
             quick_auth: &q2,
             web_auth: "",
             app_key: &p2,
-            auth_code: &c2,
-            token: &t2,
+            auth_code: "",
+            token: "",
         };
         assert!(
             authenticate(&mock_agent(), &ep2, &config())
                 .unwrap_err()
-                .contains("saved portal key")
+                .contains("valid saved portal Secret Code")
         );
         qr2.join().unwrap();
         pr2.join().unwrap();
-        cr2.join().unwrap();
-        tr2.join().unwrap();
 
         // Case C: env_lookup override, 6-digit OTP guard, JSON/duplicate/invalid auth_code, QuickAuth Not_Ok, and transport error!
         let cfg_from_env = parse_config_with_env(b"", |k| match k {
