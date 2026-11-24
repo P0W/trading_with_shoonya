@@ -310,9 +310,17 @@ impl ShoonyaBroker {
         if value.get("exch").and_then(Value::as_str) != Some(exchange)
             || value.get("token").and_then(Value::as_str) != Some(token)
         {
-            return Err(BrokerError::InvalidResponse(
-                "Shoonya GetQuotes response did not match requested instrument.".to_owned(),
-            ));
+            let field_status = |field: &str, expected: &str| match value.get(field) {
+                None | Some(Value::Null) => "missing",
+                Some(Value::String(actual)) if actual == expected => "matches",
+                Some(Value::String(_)) => "different",
+                Some(_) => "not a string",
+            };
+            return Err(BrokerError::InvalidResponse(format!(
+                "Shoonya GetQuotes response did not match requested instrument (exchange: {}; token: {}).",
+                field_status("exch", exchange),
+                field_status("token", token)
+            )));
         }
         parse_market_quote(&value)
     }
@@ -1086,6 +1094,44 @@ mod tests {
             .unwrap();
         writer.write_all(csv.as_bytes()).unwrap();
         writer.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn quote_identity_errors_describe_field_shape_without_echoing_values() {
+        let responses = [
+            r#"{"stat":"Ok","token":"101"}"#,
+            r#"{"stat":"Ok","exch":"NFO","token":101}"#,
+            r#"{"stat":"Ok","exch":"private-value","token":"private-value"}"#,
+        ];
+        let (base, server) = mock_http_sequence(
+            responses
+                .iter()
+                .map(|body| (200, body.as_bytes().to_vec()))
+                .collect(),
+        );
+        let mut broker = ShoonyaBroker::with_custom_transport(
+            test_agent(),
+            ShoonyaEndpoints {
+                api_base: base,
+                ..ShoonyaEndpoints::default()
+            },
+            Some(AuthenticatedSession {
+                user_id: "U1".to_owned(),
+                access_token: Zeroizing::new("token".to_owned()),
+            }),
+            None,
+            None,
+        );
+        for expected in [
+            "exchange: missing; token: matches",
+            "exchange: matches; token: not a string",
+            "exchange: different; token: different",
+        ] {
+            let err = broker.fetch_quote("NFO", "101").unwrap_err().to_string();
+            assert!(err.contains(expected), "{err}");
+            assert!(!err.contains("private-value"));
+        }
+        server.join().unwrap();
     }
 
     #[test]
