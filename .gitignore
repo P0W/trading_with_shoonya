@@ -3,3 +3,8 @@ logs/
 Lib/
 Include/
 downloads/
+.env
+.env.*
+!.env.example
+*.session
+rust/nifty-spread-pilot/target/
