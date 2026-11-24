@@ -397,22 +397,28 @@ pub struct ChargeBreakdown {
     pub total_charges_rs: f64,
 }
 
-/// Core broker-agnostic interface.
+/// Broker-agnostic adapter contract for plugging in Shoonya, Kite, Kotak, Groww, Dhan, Mirae, or Fyers.
 pub trait Broker {
+    /// Returns the short lowercase identifier of the broker adapter (e.g., `"shoonya"`, `"kite"`).
     fn name(&self) -> &'static str;
+    /// Returns the broker brokerage and NSE statutory fee schedule used for net P&L and OCO floors.
     fn fee_schedule(&self) -> FeeSchedule;
+    /// Ensures an authenticated broker session is active, refreshing or logging in if needed.
     fn ensure_session(&mut self) -> Result<(), BrokerError>;
+    /// Discovers the nearest tradable expiry's full Call/Put contract chain for `underlying` at `now_ist`.
     fn discover_option_chain_contracts(
         &mut self,
         underlying: &str,
         now_ist: OffsetDateTime,
     ) -> Result<ExpiryChainContracts, BrokerError>;
+    /// Resolves held or carried-over option trading symbols into typed `OptionContract` metadata.
     fn resolve_contracts_by_symbols(
         &mut self,
         underlying: &str,
         symbols: &[String],
         now_ist: OffsetDateTime,
     ) -> Result<Vec<OptionContract>, BrokerError>;
+    /// Returns true if `(exchange, trading_symbol)` is an option contract (not a future) on `underlying`.
     fn matches_option_underlying(
         &self,
         exchange: &str,
@@ -429,15 +435,22 @@ pub trait Broker {
         sym.strip_prefix(underlying)
             .is_some_and(|rest| !rest.is_empty() && !rest.as_bytes()[0].is_ascii_alphabetic())
     }
+    /// Fetches the live spot quote for `underlying` (e.g., `"NIFTY"`).
     fn get_spot_quote(&mut self, underlying: &str) -> Result<MarketQuote, BrokerError>;
+    /// Fetches live quotes (LTP, best bid/ask, OI, circuit limits) for the requested option contracts.
     fn get_option_quotes(
         &mut self,
         contracts: &[OptionContract],
     ) -> Result<Vec<(OptionContract, MarketQuote)>, BrokerError>;
+    /// Fetches live free cash, collateral, and margin utilized for pre-trade margin gating.
     fn get_account_limits(&mut self) -> Result<AccountLimits, BrokerError>;
+    /// Fetches all current net positions across the account for spread reconciliation.
     fn get_positions(&mut self) -> Result<Vec<BrokerPosition>, BrokerError>;
+    /// Fetches today's order book (resting, partial, filled, cancelled, rejected) for fill reconciliation.
     fn get_orders(&mut self) -> Result<Vec<BrokerOrder>, BrokerError>;
+    /// Submits a single-leg order (`LIMIT`, `SL-LMT`, IOC/DAY) and returns the broker order ID.
     fn place_order(&mut self, request: &OrderRequest) -> Result<OrderPlacement, BrokerError>;
+    /// Cancels an open or trigger-pending order by its broker `order_id`.
     fn cancel_order(&mut self, order_id: &str) -> Result<(), BrokerError>;
 }
 
